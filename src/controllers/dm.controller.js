@@ -1,74 +1,60 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// DM 전송
+// DM 전송 (상호 팔로우 조건 검사)
 exports.sendDM = async (req, res) => {
+    const senderId = req.user.userId;
+    const receiverId = parseInt(req.params.userId);
+    const { content } = req.body;
+
+    if (isNaN(receiverId) || !content) {
+        return res.status(400).json({ message: '수신자 ID와 내용을 모두 입력해야 합니다.' });
+    }
+
     try {
-        const senderId = req.user.userId;
-        const { receiverId, content } = req.body;
-
-        const sender = await prisma.user.findUnique({
-            where: { id: senderId }
+        const isFollowing = await prisma.follow.findUnique({
+            where: { followerId_followingId: { followerId: senderId, followingId: receiverId } },
+        });
+        const isFollowed = await prisma.follow.findUnique({
+            where: { followerId_followingId: { followerId: receiverId, followingId: senderId } },
         });
 
-        const receiver = await prisma.user.findUnique({
-            where: { id: receiverId }
+        if (!isFollowing || !isFollowed) {
+            return res.status(403).json({ message: 'DM을 보내려면 상호 팔로우 상태여야 합니다.' });
+        }
+
+        const newMessage = await prisma.message.create({
+            data: { senderId, receiverId, content },
         });
 
-        if (!receiver) {
-            return res.status(404).json({ message: '상대방 없음' });
-        }
+        res.status(201).json({ message: 'DM이 성공적으로 전송되었습니다.', dm: newMessage });
+    } catch (error) {
+        res.status(500).json({ message: 'DM 처리 중 서버 오류가 발생했습니다.' });
+    }
+};
 
-        // 미성년자 ↔ 성인 DM 차단
-        const senderIsMinor = sender.age < 19;
-        const receiverIsMinor = receiver.age < 19;
+// DM 대화 목록 조회
+exports.getDMs = async (req, res) => {
+    const userId = req.user.userId;
+    const partnerId = parseInt(req.params.userId);
 
-        if (senderIsMinor !== receiverIsMinor) {
-            return res.status(403).json({
-                message: '미성년자와 성인은 DM 불가'
-            });
-        }
+    if (isNaN(partnerId)) {
+        return res.status(400).json({ message: '유효하지 않은 상대방 ID입니다.' });
+    }
 
-        // 연령대 계산 (10 / 20 / 30 / 40)
-        const senderAgeGroup = Math.floor(sender.age / 10) * 10;
-        const receiverAgeGroup = Math.floor(receiver.age / 10) * 10;
-
-        // 맞팔 확인
-        const followAB = await prisma.follow.findFirst({
+    try {
+        const messages = await prisma.message.findMany({
             where: {
-                followerId: senderId,
-                followingId: receiverId
-            }
+                OR: [
+                    { senderId: userId, receiverId: partnerId },
+                    { senderId: partnerId, receiverId: userId },
+                ],
+            },
+            orderBy: { createdAt: 'asc' },
         });
 
-        const followBA = await prisma.follow.findFirst({
-            where: {
-                followerId: receiverId,
-                followingId: senderId
-            }
-        });
-
-        const isMutualFollow = followAB && followBA;
-
-        if (senderAgeGroup !== receiverAgeGroup && !isMutualFollow) {
-            return res.status(403).json({
-                message: '같은 연령대이거나 맞팔만 DM 가능'
-            });
-        }
-
-        const dm = await prisma.dm.create({
-            data: {
-                senderId,
-                receiverId,
-                content
-            }
-        });
-
-        res.json({ message: 'DM 전송 성공', dm });
-    } catch (err) {
-        res.status(500).json({
-            message: 'DM 실패',
-            error: err.message
-        });
+        res.status(200).json({ messages });
+    } catch (error) {
+        res.status(500).json({ message: 'DM 조회 중 서버 오류가 발생했습니다.' });
     }
 };

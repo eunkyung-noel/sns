@@ -1,13 +1,9 @@
 const express = require('express');
 const router = express.Router();
-
 const dmController = require('../controllers/dm.controller');
-const authMiddleware = require('../middlewares/auth.middleware');
+const { verifyToken } = require('../middlewares/auth.middleware');
 
-router.post(
-    '/',
-    authMiddleware.verifyToken,
-    dmController.sendDM
-);
+router.post('/:userId', verifyToken, dmController.sendDM);
+router.get('/:userId', verifyToken, dmController.getDMs);
 
 module.exports = router;

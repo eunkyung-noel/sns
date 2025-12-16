@@ -1,3 +1,5 @@
+// schema.prisma (전체 대체)
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,25 +10,30 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  age       Int
-  createdAt DateTime @default(now())
+  id               Int      @id @default(autoincrement())
+  email            String   @unique
+  password         String
+  name             String?
+  birthDate        DateTime
+  age              Int
+  isMinor          Boolean  @default(true)
+  createdAt        DateTime @default(now())
 
   // DM 관계
-  sentMessages     DM[] @relation("SentMessages")
-  receivedMessages DM[] @relation("ReceivedMessages")
+  sentMessages     Message[] @relation("SentMessages")
+  receivedMessages Message[] @relation("ReceivedMessages")
 
-  // 게시글
-  posts Post[]
+  // 게시글, 좋아요, 댓글 관계
+  posts    Post[]
+  likes    Like[]
+  comments Comment[]
+
+  // 팔로우 관계
+  followers Follow[] @relation("Followers") // 나를 팔로우 하는 사람들
+  following Follow[] @relation("Following") // 내가 팔로우 하는 사람들
 
   // 신고
   reports Report[]
-
-  // 팔로우 관계 추가
-  followers Follow[] @relation("Following")
-  following Follow[] @relation("Follower")
 }
 
 model Follow {
@@ -34,17 +41,17 @@ model Follow {
   followerId  Int
   followingId Int
 
-  follower  User @relation("Follower", fields: [followerId], references: [id])
+  follower  User @relation("Followers", fields: [followerId], references: [id])
   following User @relation("Following", fields: [followingId], references: [id])
 
   @@unique([followerId, followingId])
 }
 
-model DM {
+model Message {
   id         Int      @id @default(autoincrement())
   senderId   Int
   receiverId Int
-  content    String
+  content    String   @db.Text
   createdAt  DateTime @default(now())
 
   sender   User @relation("SentMessages", fields: [senderId], references: [id])
@@ -52,25 +59,33 @@ model DM {
 }
 
 model Post {
-  id         Int      @id @default(autoincrement())
-  content    String
-  visibility String   // PUBLIC | FRIENDS | PRIVATE
-  authorId   Int
-  createdAt  DateTime @default(now())
+  id             Int      @id @default(autoincrement())
+  title          String
+  content        String   @db.Text
+  views          Int      @default(0)
+  isAdultContent Boolean  @default(false)
+  visibility     String   @default("PUBLIC") // PUBLIC | FRIENDS | PRIVATE
+  authorId       Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
-  author User @relation(fields: [authorId], references: [id])
+  author   User      @relation(fields: [authorId], references: [id])
+  likes    Like[]
+  comments Comment[]
 }
 
-model Report {
-  id         Int      @id @default(autoincrement())
-  reporterId Int
-  targetType String   // POST | DM | COMMENT
-  targetId   Int
-  reason     String
-  createdAt  DateTime @default(now())
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String   @db.Text
+  postId    Int
+  userId    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  reporter User @relation(fields: [reporterId], references: [id])
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
 }
+
 model Like {
   id     Int @id @default(autoincrement())
   userId Int
@@ -80,4 +95,15 @@ model Like {
   post Post @relation(fields: [postId], references: [id])
 
   @@unique([userId, postId])
+}
+
+model Report {
+  id         Int      @id @default(autoincrement())
+  reporterId Int
+  targetType String
+  targetId   Int
+  reason     String
+  createdAt  DateTime @default(now())
+
+  reporter User @relation(fields: [reporterId], references: [id])
 }
