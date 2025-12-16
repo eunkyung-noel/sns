@@ -21,8 +21,23 @@ model User {
   // 게시글
   posts Post[]
 
-  // 신고 (신고한 사람 기준)
-  reports Report[] @relation("UserReports")
+  // 신고
+  reports Report[]
+
+  // 팔로우 관계 추가
+  followers Follow[] @relation("Following")
+  following Follow[] @relation("Follower")
+}
+
+model Follow {
+  id          Int @id @default(autoincrement())
+  followerId  Int
+  followingId Int
+
+  follower  User @relation("Follower", fields: [followerId], references: [id])
+  following User @relation("Following", fields: [followingId], references: [id])
+
+  @@unique([followerId, followingId])
 }
 
 model DM {
@@ -39,7 +54,7 @@ model DM {
 model Post {
   id         Int      @id @default(autoincrement())
   content    String
-  visibility String   // FRIENDS | PRIVATE
+  visibility String   // PUBLIC | FRIENDS | PRIVATE
   authorId   Int
   createdAt  DateTime @default(now())
 
@@ -54,5 +69,15 @@ model Report {
   reason     String
   createdAt  DateTime @default(now())
 
-  reporter User @relation("UserReports", fields: [reporterId], references: [id])
+  reporter User @relation(fields: [reporterId], references: [id])
+}
+model Like {
+  id     Int @id @default(autoincrement())
+  userId Int
+  postId Int
+
+  user User @relation(fields: [userId], references: [id])
+  post Post @relation(fields: [postId], references: [id])
+
+  @@unique([userId, postId])
 }

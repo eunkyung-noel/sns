@@ -8,6 +8,6 @@ router.post('/register', authController.register);
 router.post('/login', authController.login);
 
 // 보호된 API
-router.get('/me', authMiddleware, authController.me);
+router.get('/me', authMiddleware.verifyToken, authController.me);
 
 module.exports = router;

@@ -1,7 +1,8 @@
 const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+
+const prisma = new PrismaClient();
 
 // 회원가입
 exports.register = async (req, res) => {
@@ -18,9 +19,19 @@ exports.register = async (req, res) => {
             }
         });
 
-        res.json({ message: '회원가입 성공', userId: user.id });
+        res.json({
+            message: '회원가입 성공',
+            user: {
+                id: user.id,
+                email: user.email,
+                age: user.age
+            }
+        });
     } catch (err) {
-        res.status(500).json({ message: '회원가입 실패', error: err.message });
+        res.status(500).json({
+            message: '회원가입 실패',
+            error: err.message
+        });
     }
 };
 
@@ -29,32 +40,56 @@ exports.login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        const user = await prisma.user.findUnique({
+            where: { email }
+        });
+
         if (!user) {
             return res.status(401).json({ message: '유저 없음' });
         }
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
+        const isValid = await bcrypt.compare(password, user.password);
+
+        if (!isValid) {
             return res.status(401).json({ message: '비밀번호 틀림' });
         }
 
         const token = jwt.sign(
-            { userId: user.id, age: user.age },
+            { userId: user.id },
             process.env.JWT_SECRET,
             { expiresIn: '1d' }
         );
 
-        res.json({ token });
+        res.json({
+            message: '로그인 성공',
+            token
+        });
     } catch (err) {
-        res.status(500).json({ message: '로그인 실패', error: err.message });
+        res.status(500).json({
+            message: '로그인 실패',
+            error: err.message
+        });
     }
 };
 
-// 내 정보 조회
+// 내 정보
 exports.me = async (req, res) => {
-    res.json({
-        userId: req.user.userId,
-        age: req.user.age
-    });
+    try {
+        const user = await prisma.user.findUnique({
+            where: { id: req.user.userId },
+            select: {
+                id: true,
+                email: true,
+                age: true,
+                createdAt: true
+            }
+        });
+
+        res.json(user);
+    } catch (err) {
+        res.status(500).json({
+            message: '유저 정보 조회 실패',
+            error: err.message
+        });
+    }
 };
