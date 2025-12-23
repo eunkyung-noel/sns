@@ -1,109 +1,69 @@
-// schema.prisma (전체 대체)
+// 1. 데이터베이스 연결 설정 (이 부분이 없으면 에러가 발생합니다)
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
 
 generator client {
   provider = "prisma-client-js"
 }
 
-datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
-}
-
+// 2. 모델 정의
 model User {
-  id               Int      @id @default(autoincrement())
-  email            String   @unique
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  email            String    @unique
   password         String
   name             String?
+  nickname         String?
   birthDate        DateTime
   age              Int
-  isMinor          Boolean  @default(true)
-  createdAt        DateTime @default(now())
+  createdAt        DateTime  @default(now())
 
-  // DM 관계
+  posts            Post[]
+  comments         Comment[]
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
-
-  // 게시글, 좋아요, 댓글 관계
-  posts    Post[]
-  likes    Like[]
-  comments Comment[]
-
-  // 팔로우 관계
-  followers Follow[] @relation("Followers") // 나를 팔로우 하는 사람들
-  following Follow[] @relation("Following") // 내가 팔로우 하는 사람들
-
-  // 신고
-  reports Report[]
-}
-
-model Follow {
-  id          Int @id @default(autoincrement())
-  followerId  Int
-  followingId Int
-
-  follower  User @relation("Followers", fields: [followerId], references: [id])
-  following User @relation("Following", fields: [followingId], references: [id])
-
-  @@unique([followerId, followingId])
-}
-
-model Message {
-  id         Int      @id @default(autoincrement())
-  senderId   Int
-  receiverId Int
-  content    String   @db.Text
-  createdAt  DateTime @default(now())
-
-  sender   User @relation("SentMessages", fields: [senderId], references: [id])
-  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
 }
 
 model Post {
-  id             Int      @id @default(autoincrement())
-  title          String
-  content        String   @db.Text
-  views          Int      @default(0)
-  isAdultContent Boolean  @default(false)
-  visibility     String   @default("PUBLIC") // PUBLIC | FRIENDS | PRIVATE
-  authorId       Int
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  content       String
+  imageUrl      String?
+  isSafe        Boolean   @default(true)
+  isSafeContent Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  author   User      @relation(fields: [authorId], references: [id])
-  likes    Like[]
-  comments Comment[]
+  views         Int       @default(0)
+  likes         String[]  @default([])
+
+  authorId      String    @db.ObjectId
+  author        User?     @relation(fields: [authorId], references: [id]) // ? 추가하여 에러 방지
+
+  comments      Comment[]
 }
 
 model Comment {
-  id        Int      @id @default(autoincrement())
-  content   String   @db.Text
-  postId    Int
-  userId    Int
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  content   String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id])
+  postId    String   @db.ObjectId
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  authorId  String   @db.ObjectId
+  author    User     @relation(fields: [authorId], references: [id])
 }
 
-model Like {
-  id     Int @id @default(autoincrement())
-  userId Int
-  postId Int
+model Message {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  content     String
+  createdAt   DateTime @default(now())
+  isRead      Boolean  @default(false)
 
-  user User @relation(fields: [userId], references: [id])
-  post Post @relation(fields: [postId], references: [id])
+  senderId    String   @db.ObjectId
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id])
 
-  @@unique([userId, postId])
-}
-
-model Report {
-  id         Int      @id @default(autoincrement())
-  reporterId Int
-  targetType String
-  targetId   Int
-  reason     String
-  createdAt  DateTime @default(now())
-
-  reporter User @relation(fields: [reporterId], references: [id])
+  receiverId  String   @db.ObjectId
+  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
 }

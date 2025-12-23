@@ -1,48 +1,61 @@
-// src/controllers/follow.controller.js
-
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-exports.toggleFollow = async (req, res) => {
-    const followerId = req.user.userId;
-    const followingId = parseInt(req.params.userId);
-
-    if (isNaN(followingId) || followerId === followingId) {
-        return res.status(400).json({ message: '유효하지 않은 요청입니다.' });
-    }
-
+// 팔로우/언팔로우 토글
+const followUser = async (req, res) => {
     try {
-        const targetUser = await prisma.user.findUnique({ where: { id: followingId } });
-        if (!targetUser) {
-            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        const followerId = Number(req.user.userId || req.user.id);
+        const followingId = Number(req.params.userId);
+
+        if (followerId === followingId) {
+            return res.status(400).json({ message: '자기 자신을 팔로우할 수 없습니다.' });
         }
 
-        const existingFollow = await prisma.follow.findUnique({
-            where: {
-                followerId_followingId: {
-                    followerId: followerId,
-                    followingId: followingId,
-                },
-            },
+        // 스키마에 정의된 필드명 followerId, followingId 사용
+        const existing = await prisma.follow.findFirst({
+            where: { followerId, followingId }
         });
 
-        let isFollowing;
-        let message;
-
-        if (existingFollow) {
-            await prisma.follow.delete({ where: { id: existingFollow.id } });
-            isFollowing = false;
-            message = `${targetUser.name}님을 언팔로우했습니다.`;
+        if (existing) {
+            await prisma.follow.delete({ where: { id: existing.id } });
+            return res.json({ message: '언팔로우 완료', isFollowing: false });
         } else {
             await prisma.follow.create({
-                data: { followerId, followingId },
+                data: { followerId, followingId }
             });
-            isFollowing = true;
-            message = `${targetUser.name}님을 팔로우했습니다.`;
+            return res.json({ message: '팔로우 완료', isFollowing: true });
         }
-
-        res.status(200).json({ message, isFollowing });
-    } catch (error) {
-        res.status(500).json({ message: '팔로우 처리 중 서버 오류가 발생했습니다.' });
+    } catch (err) {
+        console.error("팔로우 에러:", err);
+        res.status(500).json({ error: err.message });
     }
+};
+
+// 내 팔로우 목록 조회
+const getFollowingList = async (req, res) => {
+    try {
+        const userId = Number(req.user.userId || req.user.id);
+
+        const list = await prisma.follow.findMany({
+            where: { followerId: userId },
+            include: {
+                // 스키마 모델에 정의된 실제 관계 필드명을 사용해야 함
+                user_follow_followingIdTouser: {
+                    select: { id: true, name: true }
+                }
+            }
+        });
+
+        // 프론트엔드에서 쓰기 편하게 데이터 구조 가공
+        const formattedList = list.map(item => item.user_follow_followingIdTouser);
+        res.json(formattedList);
+    } catch (err) {
+        console.error("목록 조회 에러:", err);
+        res.status(500).json({ error: err.message });
+    }
+};
+
+module.exports = {
+    followUser,
+    getFollowingList
 };

@@ -1,22 +1,28 @@
 const express = require('express');
 const router = express.Router();
-
 const postController = require('../controllers/post.controller');
-const authMiddleware = require('../middlewares/auth.middleware');
+const authMiddleware = require('../middlewares/authMiddleware');
+const multer = require('multer');
+const path = require('path');
 
-// 게시글 생성
-router.post('/', authMiddleware.verifyToken, postController.createPost);
+// 1. auth 미들웨어 검증
+const auth = typeof authMiddleware === 'function' ? authMiddleware : authMiddleware.authMiddleware;
 
-// 게시글 조회 (전체 게시글 목록)
-router.get('/', postController.getPosts);
+// 2. 파일 업로드 설정
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => cb(null, 'uploads/'),
+    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
+});
+const upload = multer({ storage: storage });
 
-// 게시글 수정
-router.put('/:postId', authMiddleware.verifyToken, postController.updatePost);
+// 3. 핸들러 검증 함수
+const v = (handler) => typeof handler === 'function' ? handler : (req, res) => res.status(500).json({ error: "Handler missing" });
 
-// 게시글 삭제
-router.delete('/:postId', authMiddleware.verifyToken, postController.deletePost);
-
-// 좋아요 토글 (POST /posts/:postId/like) - 이 부분을 추가해 주세요!
-router.post('/:postId/like', authMiddleware.verifyToken, postController.toggleLike);
+// --- 라우트 설정 ---
+router.get('/', v(postController.getAllPosts));
+router.post('/', auth, upload.single('image'), v(postController.createPost));
+router.post('/:id/like', auth, v(postController.toggleLike));
+router.post('/:id/comment', auth, v(postController.addComment));
+router.delete('/:id', auth, v(postController.deletePost));
 
 module.exports = router;

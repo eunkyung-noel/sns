@@ -1,14 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const userController = require('../controllers/user.controller'); //컨트롤러는 이미 완성됨
+const userController = require('../controllers/user.controller');
+const auth = require('../middlewares/auth.middleware');
 
-// GET /users/:userId/profile : 특정 사용자 프로필 조회
-router.get('/:userId/profile', userController.getUserProfile);
+// authMiddleware 설정 (미들웨어 구조에 따라 확인 필요)
+const authMiddleware = auth.authMiddleware ? auth.authMiddleware : auth;
 
-// GET /users/:userId/followers : 특정 사용자 팔로워 목록 조회
+// 1. 유저 검색 (상단에 위치해야 :userId와 충돌하지 않음)
+router.get('/search', userController.searchUsers);
+
+// 2. 특정 사용자 프로필 조회
+router.get('/:userId', userController.getUserProfile);
+
+// 3. 팔로우 토글 (좋아요처럼 눌렀다 떼었다 하는 기능)
+router.post('/:userId/follow', authMiddleware, userController.toggleFollow);
+
+// 4. 팔로워/팔로잉 목록 조회
 router.get('/:userId/followers', userController.getFollowers);
-
-// GET /users/:userId/following : 특정 사용자 팔로잉 목록 조회
 router.get('/:userId/following', userController.getFollowing);
 
 module.exports = router;

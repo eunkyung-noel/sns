@@ -1,225 +1,153 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { filterText } = require('../utils/aiFilter'); // AI 필터 유틸리티 불러오기
+const vision = require('@google-cloud/vision');
+const path = require('path');
 
-// 1. 게시글 생성 (Create Post) - AI 필터 적용
+const client = new vision.ImageAnnotatorClient({
+    keyFilename: path.resolve(process.cwd(), 'google-key.json')
+});
+
+const KOREAN_BAD_WORDS = ['씨발', '시발', 'ㅅㅂ', 'ㅆㅂ', 'ㅄ', '병신', '지랄', '존나', '개새끼', '개세끼', '미친놈', '미친년', '호로자식', '등신', '머저리', '닥쳐', '쓰레기', '걸레', '시버', '니미', '개소리', '엠창', '엄창', '느금마', '느금', '한남', '김치녀', '빨갱이', '틀딱', '꼴페미', '메갈', '일베', '성괴', '따먹', '보지', '자지', '섹스', '쎅쓰', '성인광고', '바카라', '토토', '조건만남', '카지노', '강간', '살인', '자살', '마약', '대마초', '창녀', '창남', '빡촌', '딸딸이', '야동', '포르노', '몰카', '도촬', '빠가', '개새', '미친', '뒈져', '꺼져'];
+
+const filterBadWords = (text) => {
+    if (!text) return "";
+    let filteredText = text;
+    KOREAN_BAD_WORDS.forEach(word => {
+        const regex = new RegExp(word, 'gi');
+        filteredText = filteredText.replace(regex, '***');
+    });
+    return filteredText;
+};
+
+// 1. 전체 게시글 조회
+exports.getAllPosts = async (req, res) => {
+    try {
+        const posts = await prisma.post.findMany({
+            include: {
+                author: { select: { id: true, name: true, nickname: true } },
+                comments: {
+                    include: { author: { select: { id: true, name: true, nickname: true } } },
+                    orderBy: { createdAt: 'asc' }
+                }
+            },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.status(200).json(posts);
+    } catch (error) {
+        res.status(500).json({ message: "데이터 로드 실패" });
+    }
+};
+
+// 2. 게시글 작성
 exports.createPost = async (req, res) => {
     try {
-        const authorId = req.user.userId;
-        const { title, content, visibility, imageUrl } = req.body;
+        const { content } = req.body;
+        const file = req.file;
 
-        if (!title || !content) {
-            return res.status(400).json({ message: '제목과 내용을 모두 입력해야 합니다.' });
+        // ID 추출 (가장 확실한 경로 확인)
+        const userId = req.user?.id || req.user?._id;
+        if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+        const authorId = String(userId);
+
+        // 유저 존재 여부 사전 검증
+        const user = await prisma.user.findUnique({ where: { id: authorId } });
+        if (!user) return res.status(404).json({ message: "계정 정보를 찾을 수 없습니다. 다시 로그인하세요." });
+
+        const cleanContent = filterBadWords(content);
+        let isSafeImage = true;
+
+        if (file) {
+            try {
+                const [result] = await client.safeSearchDetection(file.path);
+                const detections = result.safeSearchAnnotation;
+                const unsafe = ['LIKELY', 'VERY_LIKELY'];
+                if (unsafe.includes(detections.adult) || unsafe.includes(detections.violence)) {
+                    isSafeImage = false;
+                }
+            } catch (err) {
+                console.error("Vision API 분석 실패:", err.message);
+            }
         }
 
-        // 텍스트 필터링 적용
-        // filterText 유틸리티가 { isAdultContent, filteredContent }를 반환한다고 가정합니다.
-        const { isAdultContent, filteredContent } = filterText(content);
-
-        const post = await prisma.post.create({
+        // 게시글 생성 (authorId 필드가 아닌 author 관계 필드 사용)
+        const newPost = await prisma.post.create({
             data: {
-                title,
-                content: filteredContent,
-                visibility,
-                authorId,
-                isAdultContent: isAdultContent,
-                imageUrl: imageUrl || null,
+                content: cleanContent,
+                imageUrl: file ? `/uploads/${file.filename}` : null,
+                isSafe: isSafeImage,
+                isSafeContent: (content === cleanContent),
+                author: { connect: { id: authorId } } // 이 형식이 Prisma 표준입니다.
             },
-            include: { author: { select: { id: true, name: true } } }
+            include: { author: { select: { id: true, name: true, nickname: true } } }
         });
 
-        res.status(201).json({ message: '게시글 생성 완료', post });
-    } catch (err) {
-        console.error('게시글 생성 실패:', err);
-        res.status(500).json({ message: '게시글 생성 실패', error: err.message });
-    }
-};
-
-// 2. 게시글 목록 조회 (Read Posts) - 미성년자 필터링 유지
-exports.getPosts = async (req, res) => {
-    const userId = req.user ? req.user.userId : null;
-
-    try {
-        let whereCondition = {};
-
-        // 미성년자 또는 비회원일 경우 성인 콘텐츠 필터링
-        if (!userId) {
-            whereCondition.isAdultContent = false;
-        } else {
-            const user = await prisma.user.findUnique({ where: { id: userId }, select: { isMinor: true } });
-            if (user && user.isMinor) {
-                whereCondition.isAdultContent = false;
-            }
-        }
-
-        const posts = await prisma.post.findMany({
-            where: whereCondition,
-            orderBy: { createdAt: 'desc' },
-            include: {
-                author: { select: { id: true, name: true, age: true } },
-                _count: {
-                    select: { likes: true, comments: true },
-                },
-            },
-        });
-
-        res.status(200).json(posts);
-    } catch (err) {
-        console.error('게시글 목록 조회 실패:', err);
-        res.status(500).json({ message: '게시글 조회 실패', error: err.message });
-    }
-};
-
-// 3. 게시글 상세 조회 (Read Post Detail) - 조회수 증가
-exports.getPostDetail = async (req, res) => {
-    const postId = parseInt(req.params.id);
-    const userId = req.user ? req.user.userId : null;
-
-    if (isNaN(postId)) {
-        return res.status(400).json({ message: '유효하지 않은 게시글 ID입니다.' });
-    }
-
-    try {
-        const post = await prisma.post.findUnique({
-            where: { id: postId },
-            include: {
-                author: { select: { id: true, name: true, age: true } },
-                likes: true, // 좋아요 정보 포함
-                _count: { select: { likes: true, comments: true } },
-            },
-        });
-
-        if (!post) {
-            return res.status(404).json({ message: '게시글을 찾을 수 없습니다.' });
-        }
-
-        // 미성년자 필터링 (상세 조회 시에도 적용)
-        if (post.isAdultContent) {
-            const user = userId ? await prisma.user.findUnique({ where: { id: userId }, select: { isMinor: true } }) : null;
-            const isMinor = user ? user.isMinor : true; // 비회원은 미성년자로 간주
-
-            if (isMinor) {
-                // 성인 콘텐츠임을 알리고 차단
-                return res.status(403).json({ message: '미성년자는 성인 콘텐츠를 조회할 수 없습니다.' });
-            }
-        }
-
-        // 🚨 조회수 증가 로직 (이미 잘 구현되어 있었습니다!)
-        await prisma.post.update({
-            where: { id: postId },
-            data: { views: { increment: 1 } },
-        });
-
-        res.status(200).json(post);
+        res.status(201).json(newPost);
     } catch (error) {
-        console.error('게시글 상세 조회 오류:', error);
-        res.status(500).json({ message: '게시글 조회 중 서버 오류가 발생했습니다.' });
+        console.error("❌ 게시글 저장 에러:", error);
+        res.status(500).json({ message: "게시글 저장 실패", error: error.message });
     }
 };
 
-// 4. 게시글 수정 (Update Post) - AI 필터 적용
-exports.updatePost = async (req, res) => {
+// 3. 게시글 삭제
+exports.deletePost = async (req, res) => {
     try {
-        const userId = req.user.userId;
-        const postId = Number(req.params.id);
-        const { title, content, visibility, imageUrl } = req.body;
+        const postId = req.params.id;
+        const userId = String(req.user?.id || req.user?._id);
 
         const post = await prisma.post.findUnique({ where: { id: postId } });
+        if (!post) return res.status(404).json({ message: "게시글 없음" });
 
-        if (!post) {
-            return res.status(404).json({ message: '게시글 없음' });
-        }
-        if (post.authorId !== userId) {
-            return res.status(403).json({ message: '수정 권한 없음' });
-        }
+        if (String(post.authorId) !== userId) return res.status(403).json({ message: "권한 없음" });
 
-        let updateData = {};
+        await prisma.post.delete({ where: { id: postId } });
+        res.status(200).json({ message: "삭제 성공", deletedId: postId });
+    } catch (error) {
+        res.status(500).json({ message: "삭제 실패" });
+    }
+};
 
-        if (title !== undefined) updateData.title = title;
-        if (visibility !== undefined) updateData.visibility = visibility;
-        if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+// 4. 좋아요 토글
+exports.toggleLike = async (req, res) => {
+    try {
+        const postId = req.params.id;
+        const userId = String(req.user?.id || req.user?._id);
 
-        if (content !== undefined) {
-            // 텍스트 필터링 적용
-            const { isAdultContent, filteredContent } = filterText(content);
+        const post = await prisma.post.findUnique({ where: { id: postId } });
+        if (!post) return res.status(404).json({ message: "게시글 없음" });
 
-            updateData.content = filteredContent;
-            updateData.isAdultContent = isAdultContent;
-        }
+        const currentLikes = post.likes || [];
+        const updatedLikes = currentLikes.includes(userId)
+            ? currentLikes.filter(id => id !== userId)
+            : [...currentLikes, userId];
 
         const updatedPost = await prisma.post.update({
             where: { id: postId },
-            data: updateData
+            data: { likes: updatedLikes }
         });
-
-        res.json({ message: '게시글 수정 완료', post: updatedPost });
-    } catch (err) {
-        console.error('게시글 수정 실패:', err);
-        res.status(500).json({ message: '게시글 수정 실패', error: err.message });
-    }
-};
-
-// 5. 게시글 삭제 (Delete Post)
-exports.deletePost = async (req, res) => {
-    try {
-        const userId = req.user.userId;
-        const postId = Number(req.params.id);
-
-        const post = await prisma.post.findUnique({ where: { id: postId } });
-
-        if (!post) {
-            return res.status(404).json({ message: '게시글 없음' });
-        }
-        if (post.authorId !== userId) {
-            return res.status(403).json({ message: '삭제 권한 없음' });
-        }
-
-        await prisma.post.delete({ where: { id: postId } });
-
-        res.json({ message: '게시글 삭제 완료' });
-    } catch (err) {
-        console.error('게시글 삭제 실패:', err);
-        res.status(500).json({ message: '게시글 삭제 실패', error: err.message });
-    }
-};
-
-// 6. 좋아요 토글 (Toggle Like)
-exports.toggleLike = async (req, res) => {
-    const userId = req.user.userId;
-    const postId = parseInt(req.params.id);
-
-    try {
-        // 현재 좋아요 상태 확인 (userId와 postId를 복합 키로 사용)
-        const existingLike = await prisma.like.findUnique({
-            where: {
-                userId_postId: {
-                    userId,
-                    postId,
-                },
-            },
-        });
-
-        let message;
-        let liked;
-
-        if (existingLike) {
-            // 좋아요가 있으면 삭제 (취소)
-            await prisma.like.delete({ where: { id: existingLike.id } });
-            message = '좋아요 취소';
-            liked = false;
-        } else {
-            // 좋아요가 없으면 생성 (좋아요)
-            await prisma.like.create({ data: { userId, postId } });
-            message = '좋아요 성공';
-            liked = true;
-        }
-
-        // 변경된 좋아요 수 카운트
-        const likeCount = await prisma.like.count({ where: { postId } });
-
-        res.status(200).json({ message, liked, likeCount });
+        res.status(200).json(updatedPost);
     } catch (error) {
-        console.error('좋아요 처리 오류:', error);
-        res.status(500).json({ message: '좋아요 처리 중 서버 오류가 발생했습니다.' });
+        res.status(500).json({ message: "좋아요 실패" });
+    }
+};
+
+// 5. 댓글 작성
+exports.addComment = async (req, res) => {
+    try {
+        const { content } = req.body;
+        const postId = req.params.id;
+        const userId = String(req.user?.id || req.user?._id);
+
+        const comment = await prisma.comment.create({
+            data: {
+                content: filterBadWords(content),
+                post: { connect: { id: postId } },
+                author: { connect: { id: userId } }
+            },
+            include: { author: { select: { name: true, nickname: true } } }
+        });
+        res.status(201).json(comment);
+    } catch (error) {
+        res.status(500).json({ message: "댓글 실패" });
     }
 };

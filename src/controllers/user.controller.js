@@ -1,102 +1,80 @@
-// src/controllers/user.controller.js
-
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const User = require('../models/User');
 
 // 1. 사용자 프로필 조회
 exports.getUserProfile = async (req, res) => {
-    // URL 파라미터에서 userId를 가져옵니다.
-    const userId = parseInt(req.params.userId);
-
-    if (isNaN(userId)) {
-        return res.status(400).json({ message: '유효하지 않은 사용자 ID입니다.' });
-    }
-
     try {
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: {
-                id: true,
-                name: true,
-                email: true,
-                age: true,
-                isMinor: true,
-                bio: true,           // 자기소개
-                profileImageUrl: true, // 프로필 사진
-                // 팔로잉/팔로워 수 카운트
-                _count: {
-                    select: {
-                        followers: true, // 나를 팔로우하는 사람 수
-                        following: true, // 내가 팔로우하는 사람 수
-                    },
-                },
-            },
-        });
+        const userId = req.params.userId;
+        const user = await User.findById(userId)
+            .select('-password') // 비밀번호 제외
+            .populate('followers', 'name profileImage')
+            .populate('following', 'name profileImage');
 
-        if (!user) {
-            return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        if (!user) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+
+        // 팔로워/팔로잉 수 포함하여 응답
+        const userWithCounts = {
+            ...user._doc,
+            followerCount: user.followers.length,
+            followingCount: user.following.length
+        };
+
+        res.status(200).json(userWithCounts);
+    } catch (error) {
+        res.status(500).json({ message: '서버 오류' });
+    }
+};
+
+// 2. 유저 검색
+exports.searchUsers = async (req, res) => {
+    try {
+        const { q } = req.query;
+        if (!q) return res.json([]);
+
+        // 이름에 검색어가 포함된 유저 검색 (대소문자 무시)
+        const users = await User.find({
+            name: { $regex: q, $options: 'i' }
+        })
+            .select('name profileImage')
+            .limit(20);
+
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ error: "검색 실패" });
+    }
+};
+
+// 3. 팔로우 토글
+exports.toggleFollow = async (req, res) => {
+    try {
+        const myId = req.user.id || req.user._id; // 내 ID
+        const targetId = req.params.userId; // 대상 ID
+
+        if (myId.toString() === targetId.toString()) {
+            return res.status(400).json({ message: "자기 자신을 팔로우할 수 없습니다." });
         }
 
-        res.status(200).json(user);
+        const me = await User.findById(myId);
+        const target = await User.findById(targetId);
 
-    } catch (error) {
-        console.error('프로필 조회 오류:', error);
-        res.status(500).json({ message: '프로필 조회 중 서버 오류가 발생했습니다.' });
-    }
-};
+        if (!target) return res.status(404).json({ message: "대상을 찾을 수 없습니다." });
 
-// 2. 특정 사용자의 팔로워 목록 조회 (나를 팔로우하는 사람)
-exports.getFollowers = async (req, res) => {
-    // URL 파라미터에서 userId를 가져옵니다.
-    const userId = parseInt(req.params.userId);
+        const isFollowing = me.following.includes(targetId);
 
-    if (isNaN(userId)) {
-        return res.status(400).json({ message: '유효하지 않은 사용자 ID입니다.' });
-    }
+        if (isFollowing) {
+            // 언팔로우
+            me.following.pull(targetId);
+            target.followers.pull(myId);
+        } else {
+            // 팔로우
+            me.following.push(targetId);
+            target.followers.push(myId);
+        }
 
-    try {
-        const followers = await prisma.follow.findMany({
-            where: { followingId: userId }, // 내가 followingId (대상)인 경우: 나를 팔로우하는 사람들(follower)
-            select: {
-                follower: {
-                    select: { id: true, name: true, profileImageUrl: true }
-                }
-            },
-        });
+        await me.save();
+        await target.save();
 
-        // 필요한 정보만 추출하여 배열로 반환
-        res.status(200).json(followers.map(f => f.follower));
-
-    } catch (error) {
-        console.error('팔로워 목록 조회 오류:', error);
-        res.status(500).json({ message: '팔로워 목록 조회 중 서버 오류가 발생했습니다.' });
-    }
-};
-
-// 3. 특정 사용자의 팔로잉 목록 조회 (내가 팔로우하는 사람)
-exports.getFollowing = async (req, res) => {
-    // URL 파라미터에서 userId를 가져옵니다.
-    const userId = parseInt(req.params.userId);
-
-    if (isNaN(userId)) {
-        return res.status(400).json({ message: '유효하지 않은 사용자 ID입니다.' });
-    }
-
-    try {
-        const following = await prisma.follow.findMany({
-            where: { followerId: userId }, // 내가 followerId (주체)인 경우: 내가 팔로우하는 사람들(following)
-            select: {
-                following: {
-                    select: { id: true, name: true, profileImageUrl: true }
-                }
-            },
-        });
-
-        // 필요한 정보만 추출하여 배열로 반환
-        res.status(200).json(following.map(f => f.following));
-
-    } catch (error) {
-        console.error('팔로잉 목록 조회 오류:', error);
-        res.status(500).json({ message: '팔로잉 목록 조회 중 서버 오류가 발생했습니다.' });
+        res.json({ followed: !isFollowing });
+    } catch (err) {
+        res.status(500).json({ error: "팔로우 처리 실패" });
     }
 };
