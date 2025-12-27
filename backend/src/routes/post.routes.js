@@ -1,28 +1,27 @@
 const express = require('express');
 const router = express.Router();
 const postController = require('../controllers/post.controller');
-const authMiddleware = require('../middlewares/authMiddleware');
+const { verifyToken } = require('../middlewares/authMiddleware');
 const multer = require('multer');
-const path = require('path');
+const upload = multer({ dest: 'uploads/' });
 
-// 1. auth 미들웨어 검증
-const auth = typeof authMiddleware === 'function' ? authMiddleware : authMiddleware.authMiddleware;
+// 1. 게시글 관련
+router.get('/', postController.getAllPosts); // [확인] 컨트롤러의 getAllPosts와 매칭
+router.post('/', verifyToken, upload.single('image'), postController.createPost);
+router.put('/:id', verifyToken, postController.updatePost);
+router.delete('/:id', verifyToken, postController.deletePost);
 
-// 2. 파일 업로드 설정
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => cb(null, 'uploads/'),
-    filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
-});
-const upload = multer({ storage: storage });
+// 2. 게시글 좋아요
+router.post('/:id/like', verifyToken, postController.toggleLike);
 
-// 3. 핸들러 검증 함수
-const v = (handler) => typeof handler === 'function' ? handler : (req, res) => res.status(500).json({ error: "Handler missing" });
+// 3. 댓글 관련
+router.post('/:id/comment', verifyToken, postController.addComment); // [주의] 컨트롤러 함수명이 addComment인지 확인
 
-// --- 라우트 설정 ---
-router.get('/', v(postController.getAllPosts));
-router.post('/', auth, upload.single('image'), v(postController.createPost));
-router.post('/:id/like', auth, v(postController.toggleLike));
-router.post('/:id/comment', auth, v(postController.addComment));
-router.delete('/:id', auth, v(postController.deletePost));
+// 아래 updateComment와 deleteComment 함수가 컨트롤러에 정의되어 있는지 반드시 확인해야 합니다.
+router.put('/:postId/comment/:commentId', verifyToken, postController.updateComment);
+router.delete('/:postId/comment/:commentId', verifyToken, postController.deleteComment);
+
+// 4. 댓글 좋아요
+router.post('/:postId/comment/:commentId/like', verifyToken, postController.toggleCommentLike);
 
 module.exports = router;

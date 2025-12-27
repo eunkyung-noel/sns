@@ -1,137 +1,56 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const Message = require('../models/Message');
+const User = require('../models/User');
 
-// 1. 유저 검색 (ID 또는 이메일) - 추가된 기능
-const searchUsers = async (req, res) => {
+exports.searchUsers = async (req, res) => {
     try {
-        const { query } = req.query;
-        if (!query) return res.json([]);
-
-        // 입력값이 숫자인지 확인 (ID 검색용)
-        const isNumber = !isNaN(query) && query.trim() !== "";
-
-        const users = await prisma.user.findMany({
-            where: {
-                OR: [
-                    isNumber ? { id: Number(query) } : null, // ID 일치 확인
-                    { email: { contains: query } },         // 이메일 포함 확인
-                    { name: { contains: query } }           // 이름 포함 확인
-                ].filter(Boolean), // null 조건 제거
-                NOT: { id: Number(req.user.userId || req.user.id) } // 본인 제외
-            },
-            select: {
-                id: true,
-                name: true,
-                email: true
-            },
-            take: 5 // 최대 5명만 반환
-        });
+        const { term } = req.query;
+        const users = await User.find({
+            _id: { $ne: req.userId },
+            $or: [{ name: { $regex: term, $options: 'i' } }, { username: { $regex: term, $options: 'i' } }]
+        }).select('name username profileImage');
         res.json(users);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
+    } catch (err) { res.status(500).json({ message: "검색 실패" }); }
 };
 
-// 2. DM 보내기
-const sendDM = async (req, res) => {
+exports.getChatRooms = async (req, res) => {
     try {
-        const { receiverId, content } = req.body;
-        const senderId = Number(req.user.userId || req.user.id);
-        const targetId = Number(receiverId);
-
-        if (senderId === targetId) return res.status(400).json({ message: "자신에게 보낼 수 없습니다." });
-
-        const [sender, receiver] = await Promise.all([
-            prisma.user.findUnique({ where: { id: senderId } }),
-            prisma.user.findUnique({ where: { id: targetId } })
+        const userId = req.userId.toString();
+        const rooms = await Message.aggregate([
+            { $match: { $or: [{ senderId: userId }, { receiverId: userId }] } },
+            { $sort: { createdAt: -1 } },
+            { $group: {
+                    _id: { $cond: [{ $gt: ["$senderId", "$receiverId"] }, { s: "$senderId", r: "$receiverId" }, { s: "$receiverId", r: "$senderId" }] },
+                    lastMessage: { $first: "$content" },
+                    lastTimestamp: { $first: "$createdAt" },
+                    partnerId: { $first: { $cond: [{ $eq: ["$senderId", userId] }, "$receiverId", "$senderId"] } },
+                    unreadCount: { $sum: { $cond: [{ $and: [{ $eq: ["$receiverId", userId] }, { $eq: ["$isRead", false] }] }, 1, 0] } }
+                }},
+            { $sort: { lastTimestamp: -1 } }
         ]);
+        const roomsWithInfo = await Promise.all(rooms.map(async (room) => {
+            const partner = await User.findById(room.partnerId).select('name profileImage');
+            return { ...room, partnerName: partner?.name || '유저', partnerProfile: partner?.profileImage };
+        }));
+        res.json(roomsWithInfo);
+    } catch (err) { res.status(500).json({ message: "목록 실패" }); }
+};
 
-        if (!sender || !receiver) return res.status(404).json({ message: "사용자를 찾을 수 없습니다." });
+exports.getChatDetail = async (req, res) => {
+    try {
+        const { partnerId } = req.params;
+        const userId = req.userId.toString();
+        const partner = await User.findById(partnerId).select('name');
+        const messages = await Message.find({
+            $or: [{ senderId: userId, receiverId: partnerId }, { senderId: partnerId, receiverId: userId }]
+        }).sort({ createdAt: 1 });
+        res.json({ partnerName: partner ? partner.name : "알 수 없음", messages });
+    } catch (err) { res.status(500).json({ message: "상세 실패" }); }
+};
 
-        const isSenderMinor = (sender.age || 0) < 19;
-        const isReceiverMinor = (receiver.age || 0) < 19;
-
-        if (isSenderMinor !== isReceiverMinor) {
-            const isFriend = await prisma.follow.findFirst({
-                where: {
-                    OR: [
-                        { followerId: senderId, followingId: targetId },
-                        { followerId: targetId, followingId: senderId }
-                    ]
-                }
-            });
-            if (!isFriend) return res.status(403).json({ message: "미성년자와 성인 간 DM은 친구 사이만 가능합니다." });
-        }
-
-        const newMessage = await prisma.message.create({
-            data: { senderId, receiverId: targetId, content, isRead: false }
-        });
+exports.sendDM = async (req, res) => {
+    try {
+        const newMessage = new Message({ ...req.body, senderId: req.userId, isRead: false });
+        await newMessage.save();
         res.status(201).json(newMessage);
-    } catch (err) {
-        res.status(500).json({ message: "전송 실패", error: err.message });
-    }
-};
-
-// 3. 채팅 목록 조회
-const getChatRooms = async (req, res) => {
-    try {
-        const userId = Number(req.user.userId || req.user.id);
-        const messages = await prisma.message.findMany({
-            where: { OR: [{ senderId: userId }, { receiverId: userId }] },
-            orderBy: { createdAt: 'desc' },
-            include: { sender: true, receiver: true }
-        });
-
-        const chatMap = new Map();
-        messages.forEach(msg => {
-            const partner = msg.senderId === userId ? msg.receiver : msg.sender;
-            if (partner && !chatMap.has(partner.id)) {
-                chatMap.set(partner.id, {
-                    partnerId: partner.id,
-                    partnerName: partner.name,
-                    lastMessage: msg.content,
-                    createdAt: msg.createdAt,
-                    isRead: msg.receiverId === userId ? msg.isRead : true
-                });
-            }
-        });
-        res.json(Array.from(chatMap.values()));
-    } catch (err) { res.status(500).json({ error: err.message }); }
-};
-
-// 4. 상세 조회
-const getChatDetail = async (req, res) => {
-    try {
-        const myId = Number(req.user.userId || req.user.id);
-        const partnerId = Number(req.params.partnerId);
-
-        await prisma.message.updateMany({
-            where: { senderId: partnerId, receiverId: myId, isRead: false },
-            data: { isRead: true }
-        });
-
-        const messages = await prisma.message.findMany({
-            where: { OR: [{ senderId: myId, receiverId: partnerId }, { senderId: partnerId, receiverId: myId }] },
-            orderBy: { createdAt: 'asc' },
-            include: { sender: true, receiver: true }
-        });
-        res.json(messages);
-    } catch (err) { res.status(500).json({ error: err.message }); }
-};
-
-// 5. 신고하기
-const reportDM = async (req, res) => {
-    try {
-        await prisma.message.update({ where: { id: Number(req.params.id) }, data: { isReported: true } });
-        res.json({ message: "신고 접수 완료" });
-    } catch (err) { res.status(500).json({ error: err.message }); }
-};
-
-// 모든 함수 내보내기
-module.exports = {
-    searchUsers,
-    sendDM,
-    getChatRooms,
-    getChatDetail,
-    reportDM
+    } catch (err) { res.status(500).json({ message: "실패" }); }
 };

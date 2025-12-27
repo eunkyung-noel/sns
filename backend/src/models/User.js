@@ -1,14 +1,16 @@
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-    name: { type: String, required: true },
+    // 🔍 _id 정의를 아예 삭제하십시오. Mongoose가 자동으로 관리하게 둡니다.
+    username: { type: String, required: true },
+    name: { type: String },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    profileImage: { type: String, default: '' },
-    bio: { type: String, default: '' },
-    // 팔로우 관계를 위한 배열 (User 모델 참조)
-    followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
+    birthdate: { type: String },
+    profileImage: { type: String, default: "" },
+    bio: { type: String, default: "" },
+    followers: [{ type: String }],
+    following: [{ type: String }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

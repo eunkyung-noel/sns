@@ -1,153 +1,150 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-const vision = require('@google-cloud/vision');
-const path = require('path');
+const Post = require('../models/Post');
+const User = require('../models/User');
 
-const client = new vision.ImageAnnotatorClient({
-    keyFilename: path.resolve(process.cwd(), 'google-key.json')
-});
+// --- 비속어 필터링 로직 ---
+const badWords = [
+    'ㅅㅂ', '시발', '씨발', '병신', 'ㅄ', 'ㅂㅅ', '새끼', 'ㄲㅏ', '존나', '졸라',
+    '개새끼', '미친', '지랄', '엠창', '엄창', '느금', '니기미', '씨부레', '씨부랄', '씌발',
+    'tq', 'ㅅㅐㄲㅣ', 'ㅈㄴ', 'ㅆㅂ', '凸', '뻐큐', '등신', '멍청이', '쓰레기', '호로',
+    '쌍놈', '썅', '샹놈', '씹', '잡놈', '변태', '띨띨', '닥쳐', '아가리', '주둥이',
+    '미친개', '미친놈', '미친년', '걸레', '창녀', '화냥년', '씨팔', '지랄마', '염병', '옘병',
+    '뒤져', '뒈져', '꺼져', '빡대가리', '대가리', '뇌가리', '호구', '찐따', '일베', '메갈',
+    'tqsusdk', 'tqtoRl'
+];
 
-const KOREAN_BAD_WORDS = ['씨발', '시발', 'ㅅㅂ', 'ㅆㅂ', 'ㅄ', '병신', '지랄', '존나', '개새끼', '개세끼', '미친놈', '미친년', '호로자식', '등신', '머저리', '닥쳐', '쓰레기', '걸레', '시버', '니미', '개소리', '엠창', '엄창', '느금마', '느금', '한남', '김치녀', '빨갱이', '틀딱', '꼴페미', '메갈', '일베', '성괴', '따먹', '보지', '자지', '섹스', '쎅쓰', '성인광고', '바카라', '토토', '조건만남', '카지노', '강간', '살인', '자살', '마약', '대마초', '창녀', '창남', '빡촌', '딸딸이', '야동', '포르노', '몰카', '도촬', '빠가', '개새', '미친', '뒈져', '꺼져'];
-
-const filterBadWords = (text) => {
-    if (!text) return "";
-    let filteredText = text;
-    KOREAN_BAD_WORDS.forEach(word => {
-        const regex = new RegExp(word, 'gi');
-        filteredText = filteredText.replace(regex, '***');
+const checkAndFilter = (text) => {
+    let isSafe = true;
+    let filteredText = text || "";
+    badWords.forEach(word => {
+        if (filteredText.includes(word)) {
+            isSafe = false;
+            const replacement = '🫧🫧🫧🫧';
+            const regex = new RegExp(word, 'g');
+            filteredText = filteredText.replace(regex, replacement);
+        }
     });
-    return filteredText;
+    return { isSafe, filteredText };
 };
 
-// 1. 전체 게시글 조회
-exports.getAllPosts = async (req, res) => {
-    try {
-        const posts = await prisma.post.findMany({
-            include: {
-                author: { select: { id: true, name: true, nickname: true } },
-                comments: {
-                    include: { author: { select: { id: true, name: true, nickname: true } } },
-                    orderBy: { createdAt: 'asc' }
-                }
-            },
-            orderBy: { createdAt: 'desc' }
-        });
-        res.status(200).json(posts);
-    } catch (error) {
-        res.status(500).json({ message: "데이터 로드 실패" });
-    }
-};
-
-// 2. 게시글 작성
+// 1. 게시글 작성
 exports.createPost = async (req, res) => {
     try {
         const { content } = req.body;
-        const file = req.file;
-
-        // ID 추출 (가장 확실한 경로 확인)
-        const userId = req.user?.id || req.user?._id;
-        if (!userId) return res.status(401).json({ message: "로그인이 필요합니다." });
-
-        const authorId = String(userId);
-
-        // 유저 존재 여부 사전 검증
-        const user = await prisma.user.findUnique({ where: { id: authorId } });
-        if (!user) return res.status(404).json({ message: "계정 정보를 찾을 수 없습니다. 다시 로그인하세요." });
-
-        const cleanContent = filterBadWords(content);
-        let isSafeImage = true;
-
-        if (file) {
-            try {
-                const [result] = await client.safeSearchDetection(file.path);
-                const detections = result.safeSearchAnnotation;
-                const unsafe = ['LIKELY', 'VERY_LIKELY'];
-                if (unsafe.includes(detections.adult) || unsafe.includes(detections.violence)) {
-                    isSafeImage = false;
-                }
-            } catch (err) {
-                console.error("Vision API 분석 실패:", err.message);
-            }
-        }
-
-        // 게시글 생성 (authorId 필드가 아닌 author 관계 필드 사용)
-        const newPost = await prisma.post.create({
-            data: {
-                content: cleanContent,
-                imageUrl: file ? `/uploads/${file.filename}` : null,
-                isSafe: isSafeImage,
-                isSafeContent: (content === cleanContent),
-                author: { connect: { id: authorId } } // 이 형식이 Prisma 표준입니다.
-            },
-            include: { author: { select: { id: true, name: true, nickname: true } } }
+        const { isSafe, filteredText } = checkAndFilter(content);
+        const user = await User.findById(req.userId);
+        const newPost = new Post({
+            content: filteredText,
+            imageUrl: req.file ? `/uploads/${req.file.filename}` : null,
+            isSafe,
+            author: req.userId
         });
-
-        res.status(201).json(newPost);
-    } catch (error) {
-        console.error("❌ 게시글 저장 에러:", error);
-        res.status(500).json({ message: "게시글 저장 실패", error: error.message });
-    }
+        await newPost.save();
+        console.log(`[POST-LOG] 글 작성 완료: ${user?.name} - 안전: ${isSafe}`);
+        res.status(201).json(await Post.findById(newPost._id).populate('author', 'name username'));
+    } catch (err) { res.status(500).json({ message: err.message }); }
 };
 
-// 3. 게시글 삭제
+// 2. 전체 조회
+exports.getAllPosts = async (req, res) => {
+    try {
+        const posts = await Post.find().populate('author', 'name username').sort({ createdAt: -1 });
+        console.log(`[POST-LOG] 전체 피드 조회 완료 (글 개수: ${posts.length})`);
+        res.status(200).json(posts);
+    } catch (err) { res.status(500).json({ message: "로드 실패" }); }
+};
+
+// 3. 게시글 수정
+exports.updatePost = async (req, res) => {
+    try {
+        const { content } = req.body;
+        const { isSafe, filteredText } = checkAndFilter(content);
+        const post = await Post.findById(req.params.id);
+        if (!post || post.author.toString() !== req.userId) return res.status(403).json({ message: "권한 없음" });
+        post.content = filteredText;
+        post.isSafe = isSafe;
+        await post.save();
+        console.log(`[POST-LOG] 글 수정 완료: [PostID: ${req.params.id}]`);
+        res.status(200).json(post);
+    } catch (err) { res.status(500).json({ message: "수정 실패" }); }
+};
+
+// 4. 게시글 삭제
 exports.deletePost = async (req, res) => {
     try {
-        const postId = req.params.id;
-        const userId = String(req.user?.id || req.user?._id);
-
-        const post = await prisma.post.findUnique({ where: { id: postId } });
-        if (!post) return res.status(404).json({ message: "게시글 없음" });
-
-        if (String(post.authorId) !== userId) return res.status(403).json({ message: "권한 없음" });
-
-        await prisma.post.delete({ where: { id: postId } });
-        res.status(200).json({ message: "삭제 성공", deletedId: postId });
-    } catch (error) {
-        res.status(500).json({ message: "삭제 실패" });
-    }
+        const post = await Post.findById(req.params.id);
+        if (!post || post.author.toString() !== req.userId) return res.status(403).json({ message: "권한 없음" });
+        await Post.findByIdAndDelete(req.params.id);
+        console.log(`[POST-LOG] 글 삭제 완료: [PostID: ${req.params.id}]`);
+        res.status(200).json({ message: "삭제 성공" });
+    } catch (err) { res.status(500).json({ message: "삭제 실패" }); }
 };
 
-// 4. 좋아요 토글
+// 5. 게시글 좋아요 토글
 exports.toggleLike = async (req, res) => {
     try {
-        const postId = req.params.id;
-        const userId = String(req.user?.id || req.user?._id);
-
-        const post = await prisma.post.findUnique({ where: { id: postId } });
-        if (!post) return res.status(404).json({ message: "게시글 없음" });
-
-        const currentLikes = post.likes || [];
-        const updatedLikes = currentLikes.includes(userId)
-            ? currentLikes.filter(id => id !== userId)
-            : [...currentLikes, userId];
-
-        const updatedPost = await prisma.post.update({
-            where: { id: postId },
-            data: { likes: updatedLikes }
-        });
-        res.status(200).json(updatedPost);
-    } catch (error) {
-        res.status(500).json({ message: "좋아요 실패" });
-    }
+        const post = await Post.findById(req.params.id);
+        const index = post.likes.findIndex(id => id.toString() === req.userId);
+        index === -1 ? post.likes.push(req.userId) : post.likes.splice(index, 1);
+        await post.save();
+        console.log(`[POST-LOG] 글 좋아요 토글: [PostID: ${req.params.id}]`);
+        res.status(200).json({ likes: post.likes });
+    } catch (err) { res.status(500).json({ message: "좋아요 실패" }); }
 };
 
-// 5. 댓글 작성
+// 6. 댓글 작성
 exports.addComment = async (req, res) => {
     try {
         const { content } = req.body;
-        const postId = req.params.id;
-        const userId = String(req.user?.id || req.user?._id);
+        const { filteredText } = checkAndFilter(content);
+        const post = await Post.findById(req.params.id);
+        post.comments.push({ content: filteredText, author: req.userId });
+        await post.save();
+        console.log(`[POST-LOG] 댓글 작성 완료: [PostID: ${req.params.id}]`);
+        const updated = await Post.findById(req.params.id).populate('comments.author', 'name username');
+        res.status(201).json(updated.comments);
+    } catch (err) { res.status(500).json({ message: "댓글 실패" }); }
+};
 
-        const comment = await prisma.comment.create({
-            data: {
-                content: filterBadWords(content),
-                post: { connect: { id: postId } },
-                author: { connect: { id: userId } }
-            },
-            include: { author: { select: { name: true, nickname: true } } }
-        });
-        res.status(201).json(comment);
-    } catch (error) {
-        res.status(500).json({ message: "댓글 실패" });
-    }
+// 7. 댓글 수정 (누락된 함수 추가)
+exports.updateComment = async (req, res) => {
+    try {
+        const { postId, commentId } = req.params;
+        const { content } = req.body;
+        const { filteredText } = checkAndFilter(content);
+        const post = await Post.findById(postId);
+        const comment = post.comments.id(commentId);
+        if (!comment || comment.author.toString() !== req.userId) return res.status(403).json({ message: "권한 없음" });
+        comment.content = filteredText;
+        await post.save();
+        console.log(`[POST-LOG] 댓글 수정 완료: [CommentID: ${commentId}]`);
+        res.status(200).json({ message: "수정 성공" });
+    } catch (err) { res.status(500).json({ message: "댓글 수정 실패" }); }
+};
+
+// 8. 댓글 삭제 (누락된 함수 추가)
+exports.deleteComment = async (req, res) => {
+    try {
+        const { postId, commentId } = req.params;
+        const post = await Post.findById(postId);
+        const comment = post.comments.id(commentId);
+        if (!comment || comment.author.toString() !== req.userId) return res.status(403).json({ message: "권한 없음" });
+        comment.deleteOne();
+        await post.save();
+        console.log(`[POST-LOG] 댓글 삭제 완료: [CommentID: ${commentId}]`);
+        res.status(200).json({ message: "삭제 성공" });
+    } catch (err) { res.status(500).json({ message: "댓글 삭제 실패" }); }
+};
+
+// 9. 댓글 좋아요 토글 (누락된 함수 추가)
+exports.toggleCommentLike = async (req, res) => {
+    try {
+        const { postId, commentId } = req.params;
+        const post = await Post.findById(postId);
+        const comment = post.comments.id(commentId);
+        const index = comment.likes.findIndex(id => id.toString() === req.userId);
+        index === -1 ? comment.likes.push(req.userId) : comment.likes.splice(index, 1);
+        await post.save();
+        console.log(`[POST-LOG] 댓글 좋아요 토글: [CommentID: ${commentId}]`);
+        res.status(200).json({ likes: comment.likes });
+    } catch (err) { res.status(500).json({ message: "댓글 좋아요 실패" }); }
 };

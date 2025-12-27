@@ -2,82 +2,116 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// 회원가입 로직
-exports.register = async (req, res) => {
+// 1. 회원가입
+const register = async (req, res) => {
     try {
-        const { name, email, password } = req.body;
+        const { email, password, username, name } = req.body;
 
-        // 1. 필수 값 존재 여부 확인
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: "이름, 이메일, 비밀번호를 모두 입력해주세요." });
+        if (!email || !password) {
+            return res.status(400).json({ message: '이메일과 비밀번호는 필수입니다.' });
         }
 
-        // 2. 이메일 중복 체크
-        const existingUser = await User.findOne({ email: email.trim() });
-        if (existingUser) {
-            return res.status(400).json({ message: "이미 가입된 이메일입니다." });
-        }
+        const existingUser = await User.findOne({ email });
+        if (existingUser) return res.status(400).json({ message: '이미 존재하는 이메일입니다.' });
 
-        // 3. 비밀번호 암호화
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-        // 4. DB 저장 (User.js 스키마 필드와 완벽 일치)
+        const finalUsername = username || name || email.split('@')[0];
+        const finalName = name || username || '사용자';
+
         const newUser = new User({
-            name: name.trim(),
-            email: email.trim(),
+            email,
             password: hashedPassword,
-            profileImage: '',
-            bio: '',
-            followers: [],
-            following: []
+            username: finalUsername,
+            name: finalName
         });
 
         await newUser.save();
-        res.status(201).json({ message: "회원가입이 완료되었습니다!" });
 
-    } catch (error) {
-        console.error("❌ Register Controller Error:", error.message);
-        res.status(500).json({ message: "서버 오류가 발생했습니다.", error: error.message });
+        // ✅ [테스트 로그] 회원가입 성공 시 기록
+        console.log(`[AUTH-LOG] 신규 회원가입: ${email} (${new Date().toLocaleString()})`);
+
+        res.status(201).json({ message: '회원가입 성공' });
+    } catch (err) {
+        console.error("회원가입 에러 상세:", err);
+        res.status(500).json({ message: '서버 에러', error: err.message });
     }
 };
 
-// 로그인 로직
-exports.login = async (req, res) => {
+// 2. 로그인
+const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) {
-            return res.status(400).json({ message: "이메일과 비밀번호를 입력해주세요." });
-        }
+        // ✅ [테스트 로그] 로그인 시도 시 기록
+        console.log(`[AUTH-LOG] 로그인 시도: ${email}`);
 
-        const user = await User.findOne({ email: email.trim() });
+        const user = await User.findOne({ email });
         if (!user) {
-            return res.status(401).json({ message: "존재하지 않는 사용자입니다." });
+            console.log(`[AUTH-LOG] 로그인 실패 (유저없음): ${email}`);
+            return res.status(400).json({ message: '유저를 찾을 수 없습니다.' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(401).json({ message: "비밀번호가 일치하지 않습니다." });
+            console.log(`[AUTH-LOG] 로그인 실패 (비번틀림): ${email}`);
+            return res.status(400).json({ message: '비밀번호가 틀립니다.' });
         }
 
         const token = jwt.sign(
-            { id: user._id },
-            process.env.JWT_SECRET || 'secret_key',
+            { userId: user._id.toString() },
+            process.env.JWT_SECRET,
             { expiresIn: '1d' }
         );
 
-        res.status(200).json({
+        // ✅ [테스트 로그] 로그인 최종 성공 기록
+        console.log(`[AUTH-LOG] 로그인 성공: ${user.name} (@${user.username}) - ${new Date().toLocaleString()}`);
+
+        res.json({
             token,
-            userId: user._id,
             user: {
-                _id: user._id,
-                name: user.name,
-                email: user.email
+                id: user._id.toString(),
+                username: user.username,
+                name: user.name
             }
         });
-    } catch (error) {
-        console.error("❌ Login Controller Error:", error.message);
-        res.status(500).json({ message: "로그인 처리 중 서버 오류" });
+    } catch (err) {
+        console.error("로그인 에러:", err);
+        res.status(500).json({ message: '서버 에러' });
     }
 };
+
+// 3. 내 정보 가져오기
+const getMe = async (req, res) => {
+    try {
+        const user = await User.findById(req.userId).select('-password');
+        if (!user) return res.status(404).json({ message: "유저를 찾을 수 없습니다." });
+        res.status(200).json(user);
+    } catch (error) {
+        console.error("getMe 에러:", error);
+        res.status(500).json({ message: "서버 오류" });
+    }
+};
+
+// 4. 유저 검색
+const searchUsers = async (req, res) => {
+    try {
+        const { term } = req.query;
+        if (!term) return res.json([]);
+
+        const users = await User.find({
+            $or: [
+                { name: { $regex: term, $options: 'i' } },
+                { username: { $regex: term, $options: 'i' } }
+            ],
+            _id: { $ne: req.userId }
+        }).select('_id name username profileImage');
+
+        res.json(users);
+    } catch (error) {
+        console.error("searchUsers 에러:", error);
+        res.status(500).json({ message: "검색 중 오류 발생" });
+    }
+};
+
+module.exports = { register, login, getMe, searchUsers };

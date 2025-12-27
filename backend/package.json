@@ -26,7 +26,7 @@
     "nodemailer": "^7.0.11",
     "prisma": "^6.19.1",
     "react-router-dom": "^7.10.1",
-    "socket.io": "^4.8.1",
+    "socket.io": "^4.8.3",
     "styled-components": "^6.1.19"
   },
   "devDependencies": {
