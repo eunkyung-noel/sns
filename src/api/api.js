@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-    // 기존 localhost에서 AWS 퍼블릭 IP로 변경되었습니다.
+    // ✅ AWS 탄력적 IP와 백엔드 포트(5001) 반영 완료
     baseURL: 'http://3.35.170.66:5001/api',
 });
 
@@ -14,7 +14,6 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        // 자동 이동(window.location)을 완전히 제거하여 튕김 현상 방지
         console.error("서버 응답 에러:", error.response?.status, error.response?.data);
         return Promise.reject(error);
     }

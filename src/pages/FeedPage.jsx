@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import api from '../api/api';
 import Swal from 'sweetalert2';
 
-// 🔍 비속어 체크 목록 (백엔드와 동일하게 유지)
+// 🔍 비속어 체크 목록
 const badWords = [
     'ㅅㅂ', '시발', '씨발', '병신', 'ㅄ', 'ㅂㅅ', '새끼', 'ㄲㅏ', '존나', '졸라',
     '개새끼', '미친', '지랄', '엠창', '엄창', '느금', '니기미', '씨부레', '씨부랄', '씌발',
@@ -21,7 +21,8 @@ const FeedPage = () => {
     const [preview, setPreview] = useState('');
     const [commentInputs, setCommentInputs] = useState({});
 
-    const SERVER_URL = 'http://localhost:5001';
+    // ✅ 팩트체크: 이미지 경로를 위한 서버 주소 수정 완료
+    const SERVER_URL = 'http://3.35.170.66:5001';
 
     const storedUser = JSON.parse(localStorage.getItem('user') || '{}');
     const myId = String(storedUser.id || localStorage.getItem('userId') || '');
@@ -35,12 +36,10 @@ const FeedPage = () => {
 
     useEffect(() => { fetchPosts(); }, []);
 
-    // 1. 게시글 작성 (비속어 팝업 추가)
     const handlePostSubmit = async (e) => {
         e.preventDefault();
         if (!content.trim() && !image) return;
 
-        // 비속어 검사
         const hasBadWord = badWords.some(word => content.includes(word));
         if (hasBadWord) {
             const result = await Swal.fire({
@@ -66,7 +65,6 @@ const FeedPage = () => {
         } catch (err) { Swal.fire('에러', '작성 실패', 'error'); }
     };
 
-    // 2. 게시글 수정
     const handleEditPost = async (postId, oldContent) => {
         const { value: newContent } = await Swal.fire({
             title: '게시글 수정',
@@ -84,7 +82,6 @@ const FeedPage = () => {
         }
     };
 
-    // 3. 게시글 삭제
     const handleDeletePost = async (postId) => {
         const r = await Swal.fire({ title: '게시글을 삭제할까요?', icon: 'warning', showCancelButton: true });
         if (r.isConfirmed) {
@@ -95,7 +92,6 @@ const FeedPage = () => {
         }
     };
 
-    // 4. 게시글 좋아요
     const handleLike = async (postId) => {
         try {
             const res = await api.post(`/posts/${postId}/like`);
@@ -103,12 +99,10 @@ const FeedPage = () => {
         } catch (err) { console.error('좋아요 실패'); }
     };
 
-    // 5. 댓글 작성 (비속어 팝업 추가)
     const handleCommentSubmit = async (postId) => {
         const text = commentInputs[postId];
         if (!text?.trim()) return;
 
-        // 비속어 검사
         const hasBadWord = badWords.some(word => text.includes(word));
         if (hasBadWord) {
             const result = await Swal.fire({
@@ -130,7 +124,6 @@ const FeedPage = () => {
         } catch (err) { console.error('댓글 실패'); }
     };
 
-    // 6. 댓글 수정
     const handleEditComment = async (postId, commentId, oldContent) => {
         const { value: newContent } = await Swal.fire({
             title: '댓글 수정',
@@ -148,7 +141,6 @@ const FeedPage = () => {
         }
     };
 
-    // 7. 댓글 삭제
     const handleDeleteComment = async (postId, commentId) => {
         const r = await Swal.fire({ title: '댓글을 삭제할까요?', icon: 'question', showCancelButton: true });
         if (r.isConfirmed) {
@@ -159,7 +151,6 @@ const FeedPage = () => {
         }
     };
 
-    // 8. 댓글 좋아요
     const handleCommentLike = async (postId, commentId) => {
         try {
             const res = await api.post(`/posts/${postId}/comment/${commentId}/like`);
@@ -209,7 +200,7 @@ const FeedPage = () => {
                     {post.imageUrl && <PostImg src={`${SERVER_URL}${post.imageUrl}`} />}
 
                     <LikeSection onClick={() => handleLike(post._id)}>
-                        <Heart active={post.likes?.includes(myId)}>
+                        <Heart $active={post.likes?.includes(myId)}>
                             {post.likes?.includes(myId) ? '❤️' : '🤍'}
                         </Heart>
                         <LikeCount>{post.likes?.length || 0}</LikeCount>
@@ -254,7 +245,6 @@ const FeedPage = () => {
 
 export default FeedPage;
 
-/* 스타일 섹션 (생략 없이 유지) */
 const Container = styled.div` max-width: 500px; margin: auto; padding: 20px; font-family: 'Pretendard', sans-serif; `;
 const Header = styled.h1` color: #74b9ff; text-align: center; margin-bottom: 30px; `;
 const InputBox = styled.form` background: #fff; padding: 15px; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 25px; `;
