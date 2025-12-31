@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-    baseURL: 'http://localhost:5001/api', // baseURL은 하나로 고정
+    // 기존 localhost에서 AWS 퍼블릭 IP로 변경되었습니다.
+    baseURL: 'http://3.35.170.66:5001/api',
 });
 
 api.interceptors.request.use((config) => {
@@ -13,7 +14,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (response) => response,
     (error) => {
-        // ❌ 자동 이동(window.location)을 완전히 제거하여 튕김 현상 방지
+        // 자동 이동(window.location)을 완전히 제거하여 튕김 현상 방지
         console.error("서버 응답 에러:", error.response?.status, error.response?.data);
         return Promise.reject(error);
     }
