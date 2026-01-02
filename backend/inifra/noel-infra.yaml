@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'noel-infrastructure-rds-migration-v10-complete'
+
+Resources:
+  # 1. 네트워크
+  noelvpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 172.17.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: noel-vpc}]
+
+  noelsnsigw:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags: [{Key: Name, Value: noelsns-igw}]
+
+  noelVpcIgwAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref noelvpc
+      InternetGatewayId: !Ref noelsnsigw
+
+  # 2. 서브넷 설정 (EC2용 1개, RDS용 2개)
+  publicsubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref noelvpc
+      CidrBlock: 172.17.1.0/24
+      AvailabilityZone: ap-northeast-2a
+      MapPublicIpOnLaunch: true
+      Tags: [{Key: Name, Value: noel-public-sns}]
+
+  privatesubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref noelvpc
+      CidrBlock: 172.17.2.0/24
+      AvailabilityZone: ap-northeast-2a
+      Tags: [{Key: Name, Value: noel-private-sns}]
+
+  privatesubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref noelvpc
+      CidrBlock: 172.17.3.0/24
+      AvailabilityZone: ap-northeast-2c
+      Tags: [{Key: Name, Value: noel-private-sns01}]
+
+  # 3. 라우팅 테이블
+  publicroutetable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref noelvpc
+      Tags: [{Key: Name, Value: noel-public-rt}]
+
+  publicroute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref publicroutetable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref noelsnsigw
+
+  publicsubnetassociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicsubnet
+      RouteTableId: !Ref publicroutetable
+
+  # 4. 보안 그룹 (포트 3306 추가)
+  publicsg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: allow ssh, http, and mysql ports
+      VpcId: !Ref noelvpc
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 22, ToPort: 22, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 3000, ToPort: 3000, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 5001, ToPort: 5001, CidrIp: 0.0.0.0/0}
+        - {IpProtocol: tcp, FromPort: 3306, ToPort: 3306, CidrIp: 0.0.0.0/0}
+      Tags: [{Key: Name, Value: noel-sg}]
+
+  # 5. RDS 서브넷 그룹 (Private 서브넷 2개를 묶음)
+  noelDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Group for noel RDS
+      SubnetIds:
+        - !Ref privatesubnet1
+        - !Ref privatesubnet2
+
+  # 6. RDS 인스턴스 (데이터베이스)
+  noelRDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: noel-RDS
+      DBInstanceClass: db.t3.micro
+      Engine: mysql
+      EngineVersion: "8.0"
+      MasterUsername: admin
+      MasterUserPassword: password123!
+      AllocatedStorage: '20'
+      DBName: safe_sns
+      VPCSecurityGroups: [!Ref publicsg]
+      DBSubnetGroupName: !Ref noelDBSubnetGroup
+      PubliclyAccessible: true
+      Tags: [{Key: Name, Value: noel-RDS}]
+
+  # 7. EC2 서버 및 자동화
+  noelAppServer:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-0c0c14499395e36f8 # Ubuntu 22.04 LTS
+      KeyName: noel-final
+      SubnetId: !Ref publicsubnet
+      SecurityGroupIds: [!Ref publicsg]
+      Tags: [{Key: Name, Value: noel-app-server}]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          sudo apt-get update
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs git mysql-client
+          sudo npm install -g pm2 serve
+          cd /home/ubuntu
+          git clone https://github.com/eunkyung-noel/sns.git
+          cd sns/backend
+          echo "DATABASE_URL=\"mysql://admin:password123!@${noelRDSInstance.Endpoint.Address}:3306/safe_sns\"" > .env
+          npm install
+          npx prisma generate
+          npx prisma db push
+          pm2 start src/server.js --name "noel-backend"
+          cd ../frontend
+          npm install
+          PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
+          echo "REACT_APP_API_URL=http://$PUBLIC_IP:5001/api" > .env
+          npm run build
+          pm2 serve build 3000 --name "noel-frontend" --spa

@@ -1,80 +1,177 @@
-const User = require('../models/User');
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 
-// 1. 사용자 프로필 조회
-exports.getUserProfile = async (req, res) => {
+/**
+ * 1. 유저 검색
+ * 에러 가능성: SQLite는 'mode: insensitive'를 지원하지 않을 수 있음.
+ * 해결: 해당 옵션 제거 및 안전한 ID 변환 로직 적용.
+ */
+const searchUsers = async (req, res) => {
     try {
-        const userId = req.params.userId;
-        const user = await User.findById(userId)
-            .select('-password') // 비밀번호 제외
-            .populate('followers', 'name profileImage')
-            .populate('following', 'name profileImage');
+        const { term } = req.query;
+        // req.userId가 미들웨어에서 숫자/문자열 중 어떤 것으로 오든 안전하게 처리
+        const myId = req.userId ? Number(req.userId) : null;
 
-        if (!user) return res.status(404).json({ message: '사용자를 찾을 수 없습니다.' });
+        if (!term || term.trim() === "") return res.json([]);
 
-        // 팔로워/팔로잉 수 포함하여 응답
-        const userWithCounts = {
-            ...user._doc,
-            followerCount: user.followers.length,
-            followingCount: user.following.length
-        };
+        const users = await prisma.user.findMany({
+            where: {
+                AND: [
+                    {
+                        OR: [
+                            { name: { contains: term } },
+                            { nickname: { contains: term } }
+                        ],
+                    },
+                    // 본인은 검색 결과에서 제외
+                    ...(myId ? [{ NOT: { id: myId } }] : [])
+                ]
+            },
+            include: {
+                // 팔로우 여부 확인
+                followers: {
+                    where: { followerId: myId || -1 }
+                }
+            },
+            take: 20
+        });
 
-        res.status(200).json(userWithCounts);
-    } catch (error) {
-        res.status(500).json({ message: '서버 오류' });
-    }
-};
+        const formattedUsers = users.map(user => ({
+            id: user.id,
+            name: user.name,
+            nickname: user.nickname,
+            isFollowing: user.followers.length > 0
+        }));
 
-// 2. 유저 검색
-exports.searchUsers = async (req, res) => {
-    try {
-        const { q } = req.query;
-        if (!q) return res.json([]);
-
-        // 이름에 검색어가 포함된 유저 검색 (대소문자 무시)
-        const users = await User.find({
-            name: { $regex: q, $options: 'i' }
-        })
-            .select('name profileImage')
-            .limit(20);
-
-        res.json(users);
+        return res.json(formattedUsers);
     } catch (err) {
-        res.status(500).json({ error: "검색 실패" });
+        // 실제 원인은 IntelliJ 터미널 로그에서 확인 가능
+        console.error("❌ [Search Controller Error]:", err);
+        return res.status(500).json({
+            message: "검색 서버 오류",
+            error: err.message
+        });
     }
 };
 
-// 3. 팔로우 토글
-exports.toggleFollow = async (req, res) => {
+/**
+ * 2. 프로필 상세 조회
+ */
+const getUserProfile = async (req, res) => {
     try {
-        const myId = req.user.id || req.user._id; // 내 ID
-        const targetId = req.params.userId; // 대상 ID
+        const targetUserId = Number(req.params.userId);
+        const myId = req.userId ? Number(req.userId) : null;
 
-        if (myId.toString() === targetId.toString()) {
-            return res.status(400).json({ message: "자기 자신을 팔로우할 수 없습니다." });
+        if (isNaN(targetUserId)) {
+            return res.status(400).json({ message: "유효하지 않은 유저 ID입니다." });
         }
 
-        const me = await User.findById(myId);
-        const target = await User.findById(targetId);
+        const user = await prisma.user.findUnique({
+            where: { id: targetUserId },
+            include: {
+                _count: {
+                    select: { followers: true, following: true, posts: true }
+                },
+                followers: {
+                    where: { followerId: myId || -1 }
+                },
+                posts: {
+                    orderBy: { createdAt: 'desc' },
+                    select: {
+                        id: true,
+                        content: true,
+                        imageUrl: true,
+                        createdAt: true,
+                        _count: { select: { likes: true, comments: true } }
+                    }
+                }
+            }
+        });
 
-        if (!target) return res.status(404).json({ message: "대상을 찾을 수 없습니다." });
+        if (!user) return res.status(404).json({ message: "유저를 찾을 수 없습니다." });
 
-        const isFollowing = me.following.includes(targetId);
+        const { password, ...otherData } = user;
+        return res.json({
+            ...otherData,
+            isFollowing: user.followers.length > 0
+        });
+    } catch (err) {
+        console.error("❌ [Profile Controller Error]:", err);
+        return res.status(500).json({ message: "프로필 조회 오류" });
+    }
+};
 
-        if (isFollowing) {
-            // 언팔로우
-            me.following.pull(targetId);
-            target.followers.pull(myId);
+/**
+ * 3. 팔로우 토글
+ */
+const toggleFollow = async (req, res) => {
+    try {
+        const followerId = req.userId ? Number(req.userId) : null;
+        const followingId = Number(req.params.userId);
+
+        if (!followerId || isNaN(followingId)) {
+            return res.status(401).json({ message: "인증이 필요하거나 잘못된 접근입니다." });
+        }
+
+        if (followerId === followingId) {
+            return res.status(400).json({ message: "자신을 팔로우할 수 없습니다." });
+        }
+
+        const existing = await prisma.follow.findUnique({
+            where: {
+                followerId_followingId: { followerId, followingId }
+            }
+        });
+
+        if (existing) {
+            await prisma.follow.delete({
+                where: {
+                    followerId_followingId: { followerId, followingId }
+                }
+            });
+            return res.json({ isFollowing: false });
         } else {
-            // 팔로우
-            me.following.push(targetId);
-            target.followers.push(myId);
+            await prisma.follow.create({
+                data: { followerId, followingId }
+            });
+            return res.json({ isFollowing: true });
         }
-
-        await me.save();
-        await target.save();
-
-        res.json({ followed: !isFollowing });
     } catch (err) {
-        res.status(500).json({ error: "팔로우 처리 실패" });
+        console.error("❌ [Follow Toggle Error]:", err);
+        return res.status(500).json({ message: "팔로우 처리 중 서버 오류" });
     }
+};
+
+const getFollowers = async (req, res) => {
+    try {
+        const targetId = Number(req.params.userId);
+        const followers = await prisma.follow.findMany({
+            where: { followingId: targetId },
+            include: { follower: { select: { id: true, name: true, nickname: true } } }
+        });
+        return res.json(followers.map(f => f.follower));
+    } catch (err) {
+        return res.status(500).json({ message: "팔로워 목록 조회 오류" });
+    }
+};
+
+const getFollowing = async (req, res) => {
+    try {
+        const targetId = Number(req.params.userId);
+        const following = await prisma.follow.findMany({
+            where: { followerId: targetId },
+            include: { following: { select: { id: true, name: true, nickname: true } } }
+        });
+        return res.json(following.map(f => f.following));
+    } catch (err) {
+        return res.status(500).json({ message: "팔로잉 목록 조회 오류" });
+    }
+};
+
+module.exports = {
+    searchUsers,
+    getUserProfile,
+    toggleFollow,
+    getFollowers,
+    getFollowing
 };

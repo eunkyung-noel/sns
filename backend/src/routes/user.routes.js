@@ -1,19 +1,20 @@
 const express = require('express');
 const router = express.Router();
+
+// [수정 완료] 실제 파일명인 user.controller 를 정확히 지정
 const userController = require('../controllers/user.controller');
-const auth = require('../middlewares/auth.middleware');
 
-// authMiddleware 설정 (미들웨어 구조에 따라 확인 필요)
-const authMiddleware = auth.authMiddleware ? auth.authMiddleware : auth;
+// [수정 완료] 실제 폴더/파일명인 middlewares/authMiddleware 를 정확히 지정
+const { verifyToken } = require('../middlewares/authMiddleware');
 
-// 1. 유저 검색 (상단에 위치해야 :userId와 충돌하지 않음)
-router.get('/search', userController.searchUsers);
+// 1. 유저 검색
+router.get('/search', verifyToken, userController.searchUsers);
 
 // 2. 특정 사용자 프로필 조회
 router.get('/:userId', userController.getUserProfile);
 
-// 3. 팔로우 토글 (좋아요처럼 눌렀다 떼었다 하는 기능)
-router.post('/:userId/follow', authMiddleware, userController.toggleFollow);
+// 3. 팔로우 토글
+router.post('/:userId/follow', verifyToken, userController.toggleFollow);
 
 // 4. 팔로워/팔로잉 목록 조회
 router.get('/:userId/followers', userController.getFollowers);

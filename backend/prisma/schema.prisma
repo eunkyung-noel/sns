@@ -1,60 +1,95 @@
+// 1. 데이터베이스 연결 설정
 datasource db {
-  provider = "mongodb"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
+// 2. Prisma Client 생성기
 generator client {
   provider = "prisma-client-js"
 }
 
+// 3. 사용자 모델
 model User {
-  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  id               String    @id @default(uuid())
   email            String    @unique
   password         String
   name             String?
   nickname         String?
-  birthDate        DateTime
-  age              Int
+  birthDate        DateTime?
+  age              Int       @default(0)
   createdAt        DateTime  @default(now())
 
   posts            Post[]
   comments         Comment[]
   sentMessages     Message[] @relation("SentMessages")
   receivedMessages Message[] @relation("ReceivedMessages")
+
+  @@map("users")
 }
 
+// 4. 게시글 모델
 model Post {
-  id            String    @id @default(auto()) @map("_id") @db.ObjectId
-  content       String
+  id            String    @id @default(uuid())
+  content       String    @db.Text
   imageUrl      String?
   isSafe        Boolean   @default(true)
   isSafeContent Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   views         Int       @default(0)
-  likes         String[]  @default([])
-  authorId      String    @db.ObjectId
-  author        User?     @relation(fields: [authorId], references: [id])
+
+  // MySQL 전용 Json 타입 (좋아요 목록 저장)
+  likes         Json?     @default("[]")
+
+  authorId      String
+  author        User?     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
   comments      Comment[]
+
+  @@map("posts")
 }
 
+// 5. 댓글 모델
 model Comment {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  content   String
+  id        String   @id @default(uuid())
+  content   String   @db.Text
   createdAt DateTime @default(now())
-  postId    String   @db.ObjectId
+
+  // 댓글 하트 기능을 위한 Json 필드
+  likes     Json?    @default("[]")
+
+  postId    String
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
-  authorId  String   @db.ObjectId
-  author    User     @relation(fields: [authorId], references: [id])
+
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@map("comments")
 }
 
+// 6. 메시지 모델 (DM)
 model Message {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  content     String
+  id          String   @id @default(uuid())
+  content     String   @db.Text
   createdAt   DateTime @default(now())
   isRead      Boolean  @default(false)
-  senderId    String   @db.ObjectId
-  sender      User     @relation("SentMessages", fields: [senderId], references: [id])
-  receiverId  String   @db.ObjectId
-  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  senderId    String
+  sender      User     @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
+
+  receiverId  String
+  receiver    User     @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+// 7. 팔로우 모델 (추가됨)
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  @@id([followerId, followingId])
+  @@map("follows")
 }

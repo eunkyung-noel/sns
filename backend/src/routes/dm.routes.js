@@ -3,9 +3,10 @@ const router = express.Router();
 const dmController = require('../controllers/dm.controller');
 const { verifyToken } = require('../middlewares/authMiddleware');
 
-router.get('/search', verifyToken, dmController.searchUsers);
-router.get('/rooms', verifyToken, dmController.getChatRooms);
-router.get('/detail/:partnerId', verifyToken, dmController.getChatDetail);
-router.post('/send', verifyToken, dmController.sendDM);
+router.use(verifyToken);
+
+router.get('/list', dmController.getChatList);
+router.get('/:userId', dmController.getMessagesWithUser);
+router.post('/:userId', dmController.sendMessage);
 
 module.exports = router;

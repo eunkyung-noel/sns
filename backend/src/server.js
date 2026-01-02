@@ -1,117 +1,89 @@
 const express = require('express');
 const cors = require('cors');
-const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { Server } = require('socket.io');
+const { PrismaClient } = require('@prisma/client');
 require('dotenv').config();
 
-// 🔍 수정된 경로: server.js와 models는 같은 src 폴더 안에 있으므로 ./models로 호출
-const Message = require('./models/Message');
-
+const prisma = new PrismaClient();
 const app = express();
 const server = http.createServer(app);
 
+// Socket.io 설정
 const io = new Server(server, {
-    cors: {
-        origin: "http://localhost:3000",
-        methods: ["GET", "POST"]
-    }
+    cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
+// 1. 미들웨어 설정
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// 2. 강제 로그 미들웨어 (이게 안 찍히면 프론트 주소 설정 오류임)
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`📡 [${req.method}] ${req.originalUrl} - ${res.statusCode} (${duration}ms)`);
+    });
+    next();
+});
+
+// 3. 정적 파일 및 업로드 경로 설정
 const uploadPath = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadPath)) {
-    fs.mkdirSync(uploadPath);
-}
+if (!fs.existsSync(uploadPath)) { fs.mkdirSync(uploadPath); }
 app.use('/uploads', express.static(uploadPath));
 
-mongoose.connect(process.env.DATABASE_URL)
-    .then(() => console.log('✅ MongoDB 연결 성공'))
-    .catch(err => console.error('❌ MongoDB 연결 실패:', err));
+// 4. 라우터 연결 (반드시 /api 접두사 확인)
+app.use('/api/auth', require('./routes/auth.routes'));
+app.use('/api/posts', require('./routes/post.routes'));
+app.use('/api/dm', require('./routes/dm.routes'));
+app.use('/api/users', require('./routes/user.routes'));
 
-const postRoutes = require('./routes/post.routes');
-const authRoutes = require('./routes/auth.routes');
-const dmRoutes = require('./routes/dm.routes');
-
-app.use('/api/auth', authRoutes);
-app.use('/api/posts', postRoutes);
-app.use('/api/dm', dmRoutes);
-
+// 5. Socket.io 로직
 io.on('connection', (socket) => {
-    console.log('📡 유저 접속:', socket.id);
-
-    // 유저 개별 방 생성 (자신의 ID를 방 이름으로 사용)
-    socket.on('joinSelf', (userId) => {
-        socket.join(userId);
-        console.log(`🔑 유저 ${userId}가 개인 소켓 방에 입장`);
-    });
+    socket.on('joinSelf', (userId) => { socket.join(userId); });
 
     socket.on('joinRoom', async ({ roomId, userId }) => {
         socket.join(roomId);
-        console.log(`👤 유저 ${userId}가 방 ${roomId}에 입장함`);
-
         try {
-            await Message.updateMany(
-                { senderId: roomId, receiverId: userId, isRead: false },
-                { $set: { isRead: true } }
-            );
-            // 상대방에게 내가 읽었음을 알림
+            await prisma.message.updateMany({
+                where: { senderId: roomId, receiverId: userId, isRead: false },
+                data: { isRead: true }
+            });
             io.to(roomId).emit('messagesRead', { readerId: userId });
-        } catch (err) {
-            console.error("읽음 처리 에러:", err);
-        }
+        } catch (err) { console.error("❌ Socket joinRoom 에러:", err); }
     });
 
     socket.on('sendDm', async (data) => {
         const { receiverId, senderId, content } = data;
-
         try {
-            // 1. DB에 영구 저장
-            const newMessage = new Message({
-                senderId,
-                receiverId,
-                content,
-                isRead: false
+            const newMessage = await prisma.message.create({
+                data: { senderId, receiverId, content, isRead: false }
             });
-            await newMessage.save();
-
-            // 2. 실시간 전송 (받는 사람과 보내는 사람 모두에게)
-            io.to(receiverId).to(senderId).emit('receiveDm', {
-                ...newMessage._doc,
-                isMe: false // 프론트에서 senderId와 비교하여 처리함
-            });
-        } catch (err) {
-            console.error("메시지 저장 에러:", err);
-        }
+            io.to(receiverId).to(senderId).emit('receiveDm', { ...newMessage });
+        } catch (err) { console.error("❌ Socket sendDm 에러:", err); }
     });
 
-    socket.on('markAsRead', async ({ roomId, userId }) => {
-        try {
-            await Message.updateMany(
-                { senderId: roomId, receiverId: userId, isRead: false },
-                { $set: { isRead: true } }
-            );
-            io.to(roomId).emit('messagesRead', { readerId: userId });
-        } catch (err) {
-            console.error("markAsRead 에러:", err);
-        }
-    });
-
-    socket.on('disconnect', () => {
-        console.log('📡 유저 접속 해제');
-    });
+    socket.on('disconnect', () => { /* 접속 해제 로그 생략 가능 */ });
 });
 
+// 6. 404 처리
 app.use((req, res) => {
+    console.log(`⚠️ 404 발생: [${req.method}] ${req.originalUrl}`);
     res.status(404).json({ message: "요청하신 경로를 찾을 수 없습니다." });
+});
+
+// 7. 글로벌 에러 핸들러 (중요: 서버 다운 방지 및 에러 로그 기록)
+app.use((err, req, res, next) => {
+    console.error('❌ 서버 내부 에러:', err);
+    res.status(500).json({ message: "서버에서 오류가 발생했습니다.", error: err.message });
 });
 
 const PORT = 5001;
 server.listen(PORT, () => {
-    console.log(`✅ Server running on http://localhost:${PORT}`);
+    console.log('✅ MySQL(Prisma) 연동 준비 완료');
+    console.log(`✅ Server running on port ${PORT}`);
 });
