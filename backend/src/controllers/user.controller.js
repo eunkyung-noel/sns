@@ -1,11 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-/**
- * 1. 유저 검색
- * 에러 가능성: SQLite는 'mode: insensitive'를 지원하지 않을 수 있음.
- * 해결: 해당 옵션 제거 및 안전한 ID 변환 로직 적용.
- */
+
 const searchUsers = async (req, res) => {
     try {
         const { term } = req.query;
@@ -101,9 +97,7 @@ const getUserProfile = async (req, res) => {
     }
 };
 
-/**
- * 3. 팔로우 토글
- */
+
 const toggleFollow = async (req, res) => {
     try {
         const followerId = req.userId ? Number(req.userId) : null;

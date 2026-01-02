@@ -1,12 +1,11 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// 1. DM 목록 조회 (나와 대화한 사람들의 최신 메시지 리스트)
+// 1. DM 목록 조회
 const getChatList = async (req, res) => {
     try {
-        // [수정] ID는 String(UUID)이므로 Number()를 제거합니다.
-        // authMiddleware에서 req.userId에 저장한다고 가정합니다.
-        const userId = req.userId || req.user?.id;
+        // [교정] 다시 Number로 변환 (RDS User ID가 Integer이기 때문)
+        const userId = Number(req.userId);
 
         if (!userId) return res.status(401).json({ message: "인증되지 않은 사용자입니다." });
 
@@ -41,11 +40,11 @@ const getChatList = async (req, res) => {
     }
 };
 
-// 2. 특정 유저와의 대화 내역 조회 + 읽음 처리
+// 2. 특정 유저와의 대화 내역 조회
 const getMessagesWithUser = async (req, res) => {
     try {
-        const myId = req.userId || req.user?.id;
-        const opponentId = req.params.userId; // [수정] Number() 제거
+        const myId = Number(req.userId);
+        const opponentId = Number(req.params.userId); // [교정] 다시 Number 적용
 
         // 1) 읽음 업데이트
         await prisma.message.updateMany({
@@ -78,8 +77,8 @@ const getMessagesWithUser = async (req, res) => {
 // 3. 메시지 전송
 const sendMessage = async (req, res) => {
     try {
-        const senderId = req.userId || req.user?.id;
-        const receiverId = req.params.userId; // [수정] Number() 제거
+        const senderId = Number(req.userId);
+        const receiverId = Number(req.params.userId); // [교정] 다시 Number 적용
         const { content } = req.body;
 
         if (!content) return res.status(400).json({ message: '내용을 입력하세요.' });
