@@ -1,8 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'noel-infrastructure-rds-migration-v10-complete'
+Description: 'noel-infrastructure-rds-migration-v11-final'
 
 Resources:
-  # 1. 네트워크
   noelvpc:
     Type: AWS::EC2::VPC
     Properties:
@@ -22,7 +21,6 @@ Resources:
       VpcId: !Ref noelvpc
       InternetGatewayId: !Ref noelsnsigw
 
-  # 2. 서브넷 설정 (EC2용 1개, RDS용 2개)
   publicsubnet:
     Type: AWS::EC2::Subnet
     Properties:
@@ -48,7 +46,6 @@ Resources:
       AvailabilityZone: ap-northeast-2c
       Tags: [{Key: Name, Value: noel-private-sns01}]
 
-  # 3. 라우팅 테이블
   publicroutetable:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -68,7 +65,6 @@ Resources:
       SubnetId: !Ref publicsubnet
       RouteTableId: !Ref publicroutetable
 
-  # 4. 보안 그룹 (포트 3306 추가)
   publicsg:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -82,7 +78,6 @@ Resources:
         - {IpProtocol: tcp, FromPort: 3306, ToPort: 3306, CidrIp: 0.0.0.0/0}
       Tags: [{Key: Name, Value: noel-sg}]
 
-  # 5. RDS 서브넷 그룹 (Private 서브넷 2개를 묶음)
   noelDBSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
@@ -91,7 +86,6 @@ Resources:
         - !Ref privatesubnet1
         - !Ref privatesubnet2
 
-  # 6. RDS 인스턴스 (데이터베이스)
   noelRDSInstance:
     Type: AWS::RDS::DBInstance
     Properties:
@@ -108,12 +102,11 @@ Resources:
       PubliclyAccessible: true
       Tags: [{Key: Name, Value: noel-RDS}]
 
-  # 7. EC2 서버 및 자동화
   noelAppServer:
     Type: AWS::EC2::Instance
     Properties:
       InstanceType: t2.micro
-      ImageId: ami-0c0c14499395e36f8 # Ubuntu 22.04 LTS
+      ImageId: ami-040c33c6a51fd5d96
       KeyName: noel-final
       SubnetId: !Ref publicsubnet
       SecurityGroupIds: [!Ref publicsg]
@@ -127,7 +120,9 @@ Resources:
           sudo npm install -g pm2 serve
           cd /home/ubuntu
           git clone https://github.com/eunkyung-noel/sns.git
-          cd sns/backend
+          cd sns
+          git checkout feat/dynamodb # 작업 중인 브랜치로 전환
+          cd backend
           echo "DATABASE_URL=\"mysql://admin:password123!@${noelRDSInstance.Endpoint.Address}:3306/safe_sns\"" > .env
           npm install
           npx prisma generate
