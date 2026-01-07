@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import Swal from 'sweetalert2';
 
-// 둥실둥실 비눗방울 애니메이션 (사용자 제공 Header 컨셉 유지)
+// 둥실둥실 비눗방울 애니메이션
 const bubbleFloat = keyframes`
   0% { transform: translateY(0px); }
   50% { transform: translateY(-4px); }
@@ -34,16 +34,41 @@ const Navbar = ({ setIsPostModalOpen }) => {
 
     return (
         <NavContainer>
-            <NavItem $active={location.pathname === '/feed'} onClick={() => navigate('/feed')}>🏠</NavItem>
-            <NavItem $active={location.pathname === '/search'} onClick={() => navigate('/search')}>🔍</NavItem>
+            {/* 🏠 홈 버튼: 클릭 시 피드 페이지로 이동 */}
+            <NavItem
+                $active={location.pathname === '/feed'}
+                onClick={() => navigate('/feed')}
+            >
+                🏠
+            </NavItem>
 
-            {/* 중앙 게시글 작성 버튼 */}
-            <AddBtn onClick={() => setIsPostModalOpen(true)}>➕</AddBtn>
+            <NavItem
+                $active={location.pathname === '/search'}
+                onClick={() => navigate('/search')}
+            >
+                🔍
+            </NavItem>
 
-            <NavItem $active={location.pathname === '/dm'} onClick={() => navigate('/dm')}>📩</NavItem>
-            <NavItem $active={location.pathname === '/profile'} onClick={() => navigate('/profile')}>👤</NavItem>
+            {/* ➕ 중앙 게시글 작성 버튼: 클릭 시 App.js의 PostModal 오픈 */}
+            <AddBtn onClick={() => setIsPostModalOpen(true)}>
+                ➕
+            </AddBtn>
 
-            {/* 마지막 로그아웃 아이콘 추가 */}
+            <NavItem
+                $active={location.pathname === '/dm'}
+                onClick={() => navigate('/dm')}
+            >
+                📩
+            </NavItem>
+
+            {/* 👤 마이페이지 버튼 */}
+            <NavItem
+                $active={location.pathname === '/mypage' || location.pathname === '/profile'}
+                onClick={() => navigate('/mypage')}
+            >
+                👤
+            </NavItem>
+
             <NavItem onClick={handleLogout}>🚪</NavItem>
         </NavContainer>
     );
@@ -61,11 +86,12 @@ const NavContainer = styled.nav`
     height: 75px;
     background: #ffffff;
     display: flex;
-    justify-content: space-around; /* 6개 아이콘을 균등 분할 */
+    justify-content: space-around;
     align-items: center;
     border-top: 1px solid #f1f2f6;
     z-index: 1000;
     box-shadow: 0 -5px 15px rgba(0,0,0,0.05);
+    padding-bottom: env(safe-area-inset-bottom);
 `;
 
 const NavItem = styled.div`
@@ -92,7 +118,6 @@ const AddBtn = styled.div`
     display: flex;
     align-items: center;
     justify-content: center;
-    /* 비눗방울 입체감 그림자 */
     box-shadow: inset -4px -4px 8px rgba(0,0,0,0.1), 0 6px 12px rgba(116, 185, 255, 0.3);
     transition: 0.3s;
     animation: ${bubbleFloat} 3.5s ease-in-out infinite;

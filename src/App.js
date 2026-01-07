@@ -9,11 +9,16 @@ import HomePage from './pages/HomePage';
 import FeedPage from './pages/FeedPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import LoginPage from './pages/LoginPage';
-import ProfilePage from './pages/ProfilePage';
 
-// 🔍 새로 추가된 DM 페이지들
+import MyPage from './pages/MyPage';
+import PostDetailPage from './pages/PostDetailPage';
+import ReportListPage from './pages/ReportListPage';
+import ProfilePage from './pages/ProfilePage';
+import SearchPage from './pages/SearchPage';
 import MessageListPage from './pages/MessageListPage';
 import ChatRoomPage from './pages/ChatRoomPage';
+// ✅ 알림 페이지 임포트 추가
+import NotificationPage from './pages/NotificationPage';
 
 function App() {
     const isAuthenticated = !!localStorage.getItem('token');
@@ -21,7 +26,6 @@ function App() {
 
     return (
         <Router>
-            {/* 상단 헤더: 🫧 로고 포함 */}
             {isAuthenticated && <Header />}
 
             <main style={{
@@ -32,38 +36,39 @@ function App() {
                 zIndex: 1
             }}>
                 <Routes>
-                    {/* 1. 시작 페이지 (소개) */}
                     <Route path="/" element={<HomePage />} />
                     <Route path="/about" element={<HomePage />} />
 
-                    {/* 2. 인증 관련 */}
                     <Route path="/login" element={isAuthenticated ? <Navigate to="/feed" /> : <LoginPage />} />
                     <Route path="/register" element={isAuthenticated ? <Navigate to="/feed" /> : <RegisterPage />} />
 
-                    {/* 3. 서비스 내부 페이지 */}
                     <Route path="/feed" element={isAuthenticated ? <FeedPage /> : <Navigate to="/login" />} />
-                    <Route path="/profile" element={isAuthenticated ? <ProfilePage /> : <Navigate to="/login" />} />
 
-                    {/* 4. 기능 페이지 (DM 고도화) */}
-                    <Route path="/search" element={isAuthenticated ? <div style={{padding:'20px'}}>🔎 검색 페이지 준비 중</div> : <Navigate to="/login" />} />
+                    <Route path="/profile" element={isAuthenticated ? <MyPage /> : <Navigate to="/login" />} />
+                    <Route path="/mypage" element={isAuthenticated ? <MyPage /> : <Navigate to="/login" />} />
 
-                    {/* 📩 DM 목록 페이지 */}
+                    {/* ✅ 알림 페이지 라우트 추가 */}
+                    <Route path="/notifications" element={isAuthenticated ? <NotificationPage /> : <Navigate to="/login" />} />
+
+                    <Route path="/post/:id" element={isAuthenticated ? <PostDetailPage /> : <Navigate to="/login" />} />
+
+                    <Route path="/mypage/reports" element={isAuthenticated ? <ReportListPage /> : <Navigate to="/login" />} />
+
+                    <Route path="/profile/:userId" element={isAuthenticated ? <ProfilePage /> : <Navigate to="/login" />} />
+
+                    <Route path="/search" element={isAuthenticated ? <SearchPage /> : <Navigate to="/login" />} />
                     <Route path="/dm" element={isAuthenticated ? <MessageListPage /> : <Navigate to="/login" />} />
-                    {/* 💬 개별 채팅방 페이지 */}
                     <Route path="/dm/:roomId" element={isAuthenticated ? <ChatRoomPage /> : <Navigate to="/login" />} />
 
-                    {/* 잘못된 경로는 홈으로 */}
                     <Route path="*" element={<Navigate to="/" />} />
                 </Routes>
             </main>
 
-            {/* ➕ 버튼 클릭 시 열리는 모달 */}
             {isPostModalOpen && <PostModal onClose={() => setIsPostModalOpen(false)} />}
 
             {isAuthenticated && (
                 <>
                     <MessageWidget />
-                    {/* 하단 네비바: 6개 아이콘 통합 버전 */}
                     <Navbar setIsPostModalOpen={setIsPostModalOpen} />
                 </>
             )}
