@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
-import api from '../api';
+import api from '../api/api';
 
 function MessageListPage() {
     const [rooms, setRooms] = useState([]);
@@ -10,74 +10,159 @@ function MessageListPage() {
     useEffect(() => {
         const fetchRooms = async () => {
             try {
-                const res = await api.get('/dm/rooms');
+                // 🔍 경로를 /api/dm/rooms로 수정 (백엔드 라우터와 일치)
+                const res = await api.get('/api/dm/rooms');
                 setRooms(res.data);
-            } catch (err) { console.error("목록 로드 실패", err); }
+            } catch (err) {
+                console.error("목록 로드 실패", err);
+            }
         };
         fetchRooms();
     }, []);
 
     return (
         <Container>
-            <Title>Messages</Title>
+            <Header>
+                <Title>Messages 🫧</Title>
+            </Header>
             <ListContainer>
                 {rooms.length > 0 ? rooms.map((room) => (
-                    <RoomItem key={room.partnerId} onClick={() => navigate(`/dm/${room.partnerId}`)}>
-                        <Avatar>👤</Avatar>
+                    // 🔍 백엔드 구조에 맞춰 room.opponent.id 사용
+                    <RoomItem key={room.opponent.id} onClick={() => navigate(`/dm/${room.opponent.id}`)}>
+                        <AvatarWrapper>
+                            {room.opponent.profilePic ? (
+                                <AvatarImg src={`http://localhost:5001${room.opponent.profilePic}`} />
+                            ) : (
+                                <DefaultAvatar>👤</DefaultAvatar>
+                            )}
+                        </AvatarWrapper>
+
                         <InfoSection>
-                            <PartnerName>{room.partnerName}</PartnerName>
-                            {/* 읽음 여부에 따라 텍스트 굵기 변경 */}
+                            {/* 🔍 room.opponent.nickname 사용 */}
+                            <PartnerName>@{room.opponent.nickname}</PartnerName>
                             <LastMsg $isUnread={!room.isRead}>{room.lastMessage}</LastMsg>
                         </InfoSection>
-                        {/* 안읽은 메시지가 있다면 파란 점 표시 */}
-                        {!room.isRead && <UnreadIndicator />}
+
+                        <StatusSection>
+                            {!room.isRead && <UnreadIndicator />}
+                            <TimeText>
+                                {new Date(room.createdAt).toLocaleDateString()}
+                            </TimeText>
+                        </StatusSection>
                     </RoomItem>
-                )) : <NoData>대화 내역이 없습니다.</NoData>}
+                )) : (
+                    <NoData>대화 내역이 없습니다. 🫧</NoData>
+                )}
             </ListContainer>
         </Container>
     );
 }
 
-// 스타일 생략 (이전 답변의 스타일 컴포넌트 사용)
-export default MessageListPage;import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import styled from 'styled-components';
-import api from '../api';
+/* --- 웹 최적화 스타일 (동일 유지) --- */
 
-function MessageListPage() {
-    const [rooms, setRooms] = useState([]);
-    const navigate = useNavigate();
+const Container = styled.div`
+    max-width: 800px;
+    margin: 40px auto; 
+    padding: 0 20px;
+    min-height: 80vh;
+`;
 
-    useEffect(() => {
-        const fetchRooms = async () => {
-            try {
-                const res = await api.get('/dm/rooms');
-                setRooms(res.data);
-            } catch (err) { console.error("목록 로드 실패", err); }
-        };
-        fetchRooms();
-    }, []);
+const Header = styled.div`
+    margin-bottom: 30px;
+    border-bottom: 2px solid #74b9ff;
+    padding-bottom: 15px;
+`;
 
-    return (
-        <Container>
-            <Title>Messages</Title>
-            <ListContainer>
-                {rooms.length > 0 ? rooms.map((room) => (
-                    <RoomItem key={room.partnerId} onClick={() => navigate(`/dm/${room.partnerId}`)}>
-                        <Avatar>👤</Avatar>
-                        <InfoSection>
-                            <PartnerName>{room.partnerName}</PartnerName>
-                            {/* 읽음 여부에 따라 텍스트 굵기 변경 */}
-                            <LastMsg $isUnread={!room.isRead}>{room.lastMessage}</LastMsg>
-                        </InfoSection>
-                        {/* 안읽은 메시지가 있다면 파란 점 표시 */}
-                        {!room.isRead && <UnreadIndicator />}
-                    </RoomItem>
-                )) : <NoData>대화 내역이 없습니다.</NoData>}
-            </ListContainer>
-        </Container>
-    );
-}
+const Title = styled.h2`
+    font-size: 28px;
+    color: #1a2a6c;
+    margin: 0;
+    font-weight: 800;
+`;
 
-// 스타일 생략 (이전 답변의 스타일 컴포넌트 사용)
+const ListContainer = styled.div`
+    background: white;
+    border-radius: 30px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+`;
+
+const RoomItem = styled.div`
+    display: flex;
+    align-items: center;
+    padding: 25px 40px;
+    gap: 20px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 1px solid #f1f2f6;
+    &:last-child { border-bottom: none; }
+    &:hover {
+        background: #f0f8ff;
+        transform: scale(1.01);
+    }
+`;
+
+const AvatarWrapper = styled.div`
+    width: 65px;
+    height: 65px;
+    border-radius: 50%;
+    background: #f1f2f6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    border: 2px solid #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+`;
+
+const AvatarImg = styled.img`
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+`;
+
+const DefaultAvatar = styled.span` font-size: 30px; `;
+
+const InfoSection = styled.div`
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+`;
+
+const PartnerName = styled.span`
+    font-size: 18px;
+    font-weight: 700;
+    color: #2d3436;
+`;
+
+const LastMsg = styled.p`
+    font-size: 15px;
+    color: ${props => props.$isUnread ? '#2d3436' : '#b2bec3'};
+    font-weight: ${props => props.$isUnread ? '700' : '400'};
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 400px;
+`;
+
+const StatusSection = styled.div`
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 10px;
+`;
+
+const UnreadIndicator = styled.div`
+    width: 12px;
+    height: 12px;
+    background: #74b9ff;
+    border-radius: 50%;
+    box-shadow: 0 0 10px rgba(116, 185, 255, 0.6);
+`;
+
+const TimeText = styled.span` font-size: 12px; color: #b2bec3; `;
+const NoData = styled.div` text-align: center; padding: 100px 0; font-size: 18px; color: #b2bec3; `;
+
 export default MessageListPage;

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import api from '../api/api';
 import Swal from 'sweetalert2';
+import EditPostModal from './EditPostModal';
 
 const FeedPage = () => {
     const navigate = useNavigate();
@@ -13,11 +14,23 @@ const FeedPage = () => {
     const [commentText, setCommentText] = useState({});
     const [activeMenuId, setActiveMenuId] = useState(null);
 
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingPost, setEditingPost] = useState(null);
+
     const fileInputRef = useRef(null);
     const SERVER_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
-
-    // ✅ 타입 일치 (String)
     const myId = localStorage.getItem('userId') ? String(localStorage.getItem('userId')) : null;
+
+    const filterToBubbles = (text) => {
+        if (!text || typeof text !== 'string') return text;
+        const badWords = ['ㅅㅂ', '시발', '씨발', 'ㅄ', '병신', 'ㅅㄲ', '새끼', '존나', 'ㅈㄴ', '개새끼', '미친', '바보', '멍청이'];
+        let filteredText = text;
+        badWords.forEach(word => {
+            const regex = new RegExp(word, 'gi');
+            filteredText = filteredText.replace(regex, '🫧'.repeat(word.length));
+        });
+        return filteredText;
+    };
 
     const fetchPosts = async () => {
         try {
@@ -46,11 +59,19 @@ const FeedPage = () => {
         } catch (err) { Swal.fire('에러', '게시글 작성 실패', 'error'); }
     };
 
+    const handleEditClick = (post) => {
+        setEditingPost(post);
+        setIsEditModalOpen(true);
+        setActiveMenuId(null);
+    };
+
     const handleDeletePost = async (postId) => {
         const result = await Swal.fire({
-            title: '삭제하시겠습니까?',
+            title: '게시글 삭제',
+            text: '이 버블을 터뜨릴까요? 🫧',
             icon: 'warning',
             showCancelButton: true,
+            confirmButtonColor: '#ff7675',
             confirmButtonText: '삭제',
             cancelButtonText: '취소'
         });
@@ -63,55 +84,33 @@ const FeedPage = () => {
         }
     };
 
-    const handleUpdatePost = async (postId, currentContent) => {
-        const { value: text } = await Swal.fire({
-            title: '게시글 수정',
-            input: 'textarea',
-            inputValue: currentContent,
-            showCancelButton: true
-        });
-        if (text) {
-            try {
-                await api.put(`/posts/${postId}`, { content: text });
-                setPosts(prev => prev.map(p => String(p.id) === String(postId) ? { ...p, content: text } : p));
-            } catch (err) { Swal.fire('에러', '수정 실패', 'error'); }
-        }
-    };
-
-    // ✅ 하트(좋아요) 로직 완전 수정
     const handleLikePost = async (e, postId) => {
         e.preventDefault();
         e.stopPropagation();
-        if (!myId) {
-            Swal.fire('알림', '로그인이 필요합니다.', 'info');
-            return;
-        }
+        if (!myId) return Swal.fire('알림', '로그인이 필요합니다.', 'info');
 
-        // 1. 낙관적 업데이트: UI를 먼저 변경
         setPosts(prev => prev.map(post => {
             if (String(post.id) === String(postId)) {
-                const currentLikes = post.likes || [];
-                // ✅ 객체 형태(l.userId)와 단순 ID 형태(l) 모두 대응하도록 수정
-                const alreadyLiked = currentLikes.some(l => {
-                    const userIdInLike = l.userId ? String(l.userId) : String(l);
-                    return userIdInLike === myId;
-                });
-
-                const newLikes = alreadyLiked
-                    ? currentLikes.filter(l => (l.userId ? String(l.userId) : String(l)) !== myId)
-                    : [...currentLikes, { userId: myId }];
-
-                return { ...post, likes: newLikes };
+                const isLiked = (post.likes || []).some(l => String(l.userId || l) === myId);
+                const updatedLikes = isLiked
+                    ? post.likes.filter(l => String(l.userId || l) !== myId)
+                    : [...(post.likes || []), { userId: myId }];
+                return { ...post, likes: updatedLikes };
             }
             return post;
         }));
 
-        // 2. 서버 요청
         try {
-            await api.post(`/posts/${postId}/like`);
+            const res = await api.post(`/posts/${postId}/like`);
+            const serverLikes = res.data.likes || res.data;
+            if (Array.isArray(serverLikes)) {
+                setPosts(prev => prev.map(post =>
+                    String(post.id) === String(postId) ? { ...post, likes: serverLikes } : post
+                ));
+            }
         } catch (err) {
-            console.error("좋아요 실패");
-            fetchPosts(); // 실패 시 원래 데이터로 복구
+            console.error('좋아요 실패');
+            fetchPosts();
         }
     };
 
@@ -119,30 +118,70 @@ const FeedPage = () => {
         const text = commentText[postId];
         if (!text?.trim()) return;
         try {
-            await api.post(`/posts/${postId}/comments`, { content: text });
+            await api.post(`/posts/${postId}/comments`, { content: text }); // 경로 수정
             fetchPosts();
             setCommentText(prev => ({ ...prev, [postId]: '' }));
         } catch (err) { console.error('댓글 작성 실패'); }
     };
 
-    const handleDeleteComment = async (postId, commentId) => {
+    const handleLikeComment = async (commentId) => {
+        if (!myId) return Swal.fire('알림', '로그인이 필요합니다.', 'info');
         try {
-            await api.delete(`/posts/comments/${commentId}`);
+            await api.post(`/posts/comments/${commentId}/like`); // 경로 수정
             fetchPosts();
-        } catch (err) { Swal.fire('에러', '삭제 실패', 'error'); }
+        } catch (err) { console.error('댓글 좋아요 실패'); }
+    };
+
+    const handleUpdateComment = async (commentId, currentContent) => {
+        const { value: text } = await Swal.fire({
+            title: '댓글 수정',
+            input: 'textarea',
+            inputValue: currentContent,
+            showCancelButton: true,
+            confirmButtonColor: '#74b9ff',
+        });
+        if (text) {
+            try {
+                await api.put(`/comments/${commentId}`, { content: text });
+                fetchPosts();
+            } catch (err) { Swal.fire('에러', '수정 실패', 'error'); }
+        }
+    };
+
+    const handleDeleteComment = async (commentId) => {
+        const result = await Swal.fire({
+            title: '댓글 삭제?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ff4757'
+        });
+        if (result.isConfirmed) {
+            try {
+                await api.delete(`/comments/${commentId}`);
+                fetchPosts();
+            } catch (err) { Swal.fire('에러', '댓글 삭제 실패', 'error'); }
+        }
     };
 
     return (
         <Container>
             <TopBar>
-                <Header>🫧 Bubble Feed</Header>
+                <Header onClick={() => window.location.reload()}>🫧 Bubble Feed</Header>
                 <NotiBtn onClick={() => navigate('/notifications')}>🔔</NotiBtn>
             </TopBar>
 
             <InputBox onSubmit={handlePostSubmit}>
-                <TextArea value={content} onChange={e => setContent(e.target.value)} placeholder="무슨 생각을 하고 계신가요?" />
-                {preview && <PreviewWrapper><Preview src={preview} /><RemovePreview onClick={() => { setImage(null); setPreview(''); }}>✕</RemovePreview></PreviewWrapper>}
-                <FileRow><CameraButton type="button" onClick={() => fileInputRef.current.click()}>📸</CameraButton><SubmitBtn type="submit">➕</SubmitBtn></FileRow>
+                <TextArea value={content} onChange={e => setContent(e.target.value)} placeholder="당신의 일상을 공유해보세요... 🫧" />
+                {preview && (
+                    <PreviewWrapper>
+                        <Preview src={preview} />
+                        <RemovePreview onClick={() => { setImage(null); setPreview(''); }}>✕</RemovePreview>
+                    </PreviewWrapper>
+                )}
+                <FileRow>
+                    <CameraButton type="button" onClick={() => fileInputRef.current.click()}>📸 사진 첨부</CameraButton>
+                    <SubmitBtn type="submit" disabled={!content.trim() && !image}>게시하기</SubmitBtn>
+                </FileRow>
                 <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={e => {
                     const file = e.target.files[0];
                     if (file) { setImage(file); setPreview(URL.createObjectURL(file)); }
@@ -150,11 +189,7 @@ const FeedPage = () => {
             </InputBox>
 
             {posts.map(post => {
-                // ✅ 좋아요 여부 판별 로직 수정
-                const isLiked = (post.likes || []).some(l => {
-                    const userIdInLike = l.userId ? String(l.userId) : String(l);
-                    return userIdInLike === myId;
-                });
+                const isLiked = (post.likes || []).some(l => String(l.userId || l) === myId);
                 const isMyPost = String(post.authorId) === myId;
 
                 return (
@@ -163,7 +198,7 @@ const FeedPage = () => {
                             <UserInfo onClick={() => navigate(`/profile/${post.authorId}`)}>
                                 <Avatar src={post.author?.profilePic ? `${SERVER_URL}${post.author.profilePic}` : `https://ui-avatars.com/api/?name=${post.author?.nickname}&background=74b9ff&color=fff`} />
                                 <NameCol>
-                                    <UserName>@{post.author?.nickname || 'user'}</UserName>
+                                    <UserName>@{post.author?.nickname || 'anonymous'}</UserName>
                                     <TimeText>{new Date(post.createdAt).toLocaleString()}</TimeText>
                                 </NameCol>
                             </UserInfo>
@@ -174,91 +209,131 @@ const FeedPage = () => {
                                     <MenuDropdown>
                                         {isMyPost ? (
                                             <>
-                                                <MenuItem onClick={() => handleUpdatePost(post.id, post.content)}>✏️ 수정</MenuItem>
+                                                <MenuItem onClick={() => handleEditClick(post)}>✏️ 수정</MenuItem>
                                                 <MenuItem className="delete" onClick={() => handleDeletePost(post.id)}>🗑️ 삭제</MenuItem>
                                             </>
                                         ) : (
-                                            <MenuItem onClick={() => Swal.fire('신고', '신고가 접수되었습니다.', 'success')}>🚨 신고</MenuItem>
+                                            <MenuItem onClick={() => Swal.fire('신고', '정상 접수되었습니다.', 'success')}>🚨 신고</MenuItem>
                                         )}
                                     </MenuDropdown>
                                 )}
                             </MenuContainer>
                         </PostHeader>
 
-                        <Content>{post.content}</Content>
+                        <Content>{filterToBubbles(post.content)}</Content>
                         {post.imageUrl && <PostImg src={`${SERVER_URL}${post.imageUrl}`} />}
 
-                        {/* ✅ 클릭 영역 확실히 보장 */}
-                        <ActionRow onClick={(e) => handleLikePost(e, post.id)}>
-                            <Heart isLiked={isLiked}>{isLiked ? '❤️' : '🤍'}</Heart>
-                            <LikeCount isLiked={isLiked}>{post.likes?.length || 0}</LikeCount>
+                        <ActionRow>
+                            <LikeBtn onClick={(e) => handleLikePost(e, post.id)}>
+                                <Heart $isLiked={isLiked}>{isLiked ? '❤️' : '🤍'}</Heart>
+                                <LikeCount $isLiked={isLiked}>{post.likes?.length || 0}</LikeCount>
+                            </LikeBtn>
                         </ActionRow>
 
                         <CommentSection>
-                            {(post.comments || []).map(comment => (
-                                <CommentItem key={comment.id}>
-                                    <CommentContent>
-                                        <div style={{ flex: 1 }}>
-                                            <b>{comment.author?.nickname}</b> {comment.content}
-                                        </div>
-                                        {String(comment.authorId) === myId && (
-                                            <CommentIconBtn onClick={() => handleDeleteComment(post.id, comment.id)}>🗑️</CommentIconBtn>
-                                        )}
-                                    </CommentContent>
-                                </CommentItem>
-                            ))}
+                            {(post.comments || []).map(comment => {
+                                const isCommentLiked = (comment.likes || []).some(l => String(l.userId || l) === myId);
+                                return (
+                                    <CommentItem key={comment.id}>
+                                        <CommentContent>
+                                            <AvatarSmall src={comment.author?.profilePic ? `${SERVER_URL}${comment.author.profilePic}` : `https://ui-avatars.com/api/?name=${comment.author?.nickname}&background=74b9ff&color=fff`} />
+                                            <CommentBubbleWrapper>
+                                                <CommentBubble>
+                                                    <CommentUser>@{comment.author?.nickname}</CommentUser>
+                                                    <CommentText>{filterToBubbles(comment.content)}</CommentText>
+                                                </CommentBubble>
+                                                <CommentActionRow>
+                                                    <CommentActionItem onClick={() => handleLikeComment(comment.id)} $active={isCommentLiked}>
+                                                        {isCommentLiked ? '❤️' : '🤍'} {comment.likes?.length || 0}
+                                                    </CommentActionItem>
+                                                    {String(comment.authorId) === myId && (
+                                                        <>
+                                                            <CommentActionItem onClick={() => handleUpdateComment(comment.id, comment.content)}>✏️</CommentActionItem>
+                                                            <CommentActionItem onClick={() => handleDeleteComment(comment.id)} className="delete">🗑️</CommentActionItem>
+                                                        </>
+                                                    )}
+                                                </CommentActionRow>
+                                            </CommentBubbleWrapper>
+                                        </CommentContent>
+                                    </CommentItem>
+                                );
+                            })}
                             <CommentInputRow>
                                 <CommentInput
-                                    placeholder="댓글 쓰기..."
+                                    placeholder="댓글 달기..."
                                     value={commentText[post.id] || ''}
                                     onChange={e => setCommentText({ ...commentText, [post.id]: e.target.value })}
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddComment(post.id)}
                                 />
-                                <CommentBtn onClick={() => handleAddComment(post.id)}>전송</CommentBtn>
+                                <CommentBtn onClick={() => handleAddComment(post.id)}>게시</CommentBtn>
                             </CommentInputRow>
                         </CommentSection>
                     </PostCard>
                 );
             })}
+
+            {isEditModalOpen && (
+                <EditPostModal
+                    post={editingPost}
+                    onClose={() => setIsEditModalOpen(false)}
+                    onUpdate={() => {
+                        fetchPosts();
+                        setIsEditModalOpen(false);
+                    }}
+                />
+            )}
         </Container>
     );
 };
 
-// --- 스타일 컴포넌트 (동일) ---
-const MenuContainer = styled.div` position: relative; `;
-const MenuBtn = styled.button` background: none; border: none; font-size: 20px; cursor: pointer; color: #b2bec3; padding: 5px; `;
-const MenuDropdown = styled.div` position: absolute; right: 0; top: 30px; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); z-index: 100; width: 80px; overflow: hidden; `;
-const MenuItem = styled.div` padding: 10px; font-size: 13px; cursor: pointer; text-align: center; &:hover { background: #f1f2f6; } &.delete { color: #ff4757; } `;
-const Heart = styled.span` font-size: 20px; color: ${props => props.isLiked ? '#ff4757' : '#ccc'}; cursor: pointer; `;
-const LikeCount = styled.span` font-size: 14px; font-weight: bold; color: ${props => props.isLiked ? '#ff4757' : '#636e72'}; `;
-const Container = styled.div` max-width: 500px; margin: auto; padding: 20px 20px 100px; background-color: #f0f8ff; min-height: 100vh; `;
-const TopBar = styled.div` display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; `;
-const Header = styled.h1` color: #74b9ff; margin: 0; `;
-const NotiBtn = styled.button` background: white; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; `;
-const InputBox = styled.form` background: #fff; padding: 20px; border-radius: 25px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); `;
-const TextArea = styled.textarea` width: 100%; border: none; outline: none; min-height: 60px; font-size: 16px; resize: none; `;
-const FileRow = styled.div` display: flex; justify-content: space-between; margin-top: 10px; `;
-const CameraButton = styled.button` background: #f1f2f6; border:none; padding: 8px 15px; border-radius: 12px; cursor:pointer; `;
-const SubmitBtn = styled.button` border-radius: 50%; border:none; background:#74b9ff; color:white; width:40px; height:40px; cursor:pointer; font-size: 20px; `;
-const PostCard = styled.div` background: #fff; padding: 20px; border-radius: 25px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); `;
+/* --- 스타일 정의 (수정 완료) --- */
+const Container = styled.div` max-width: 900px; margin: auto; padding: 60px 20px 120px; background-color: #f8fbff; min-height: 100vh; `;
+const TopBar = styled.div` display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; `;
+const Header = styled.h1` color: #74b9ff; font-size: 38px; cursor: pointer; letter-spacing: -1px; `;
+const NotiBtn = styled.button` background: white; border: none; border-radius: 20px; width: 60px; height: 60px; font-size: 28px; cursor: pointer; box-shadow: 0 8px 20px rgba(116, 185, 255, 0.15); `;
+const InputBox = styled.form` background: #fff; padding: 40px; border-radius: 35px; margin-bottom: 50px; box-shadow: 0 15px 40px rgba(0,0,0,0.03); `;
+const TextArea = styled.textarea` width: 100%; border: none; outline: none; min-height: 120px; font-size: 20px; color: #2d3436; resize: none; `;
+const FileRow = styled.div` display: flex; justify-content: space-between; align-items: center; margin-top: 25px; `;
+const CameraButton = styled.button` background: #f1f2f6; border:none; padding: 14px 24px; border-radius: 18px; cursor:pointer; font-weight: 700; color: #636e72; transition: 0.2s; &:hover { background: #e2e2e2; } `;
+const SubmitBtn = styled.button` border-radius: 18px; border:none; background:#74b9ff; color:white; padding: 14px 45px; cursor:pointer; font-size: 18px; font-weight: 800; transition: 0.3s; &:hover { background: #0984e3; transform: translateY(-2px); } &:disabled { background: #dfe6e9; cursor: default; transform: none; } `;
+const PostCard = styled.div` background: #fff; padding: 45px; border-radius: 40px; margin-bottom: 40px; box-shadow: 0 20px 50px rgba(0,0,0,0.02); `;
 const PostHeader = styled.div` display: flex; justify-content: space-between; align-items: center; `;
-const UserInfo = styled.div` display: flex; align-items: center; gap: 10px; cursor: pointer; `;
-const Avatar = styled.img` width: 35px; height: 35px; border-radius: 50%; object-fit: cover; `;
+const UserInfo = styled.div` display: flex; align-items: center; gap: 20px; cursor: pointer; `;
+const Avatar = styled.img` width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid #f1f2f6; `;
+const AvatarSmall = styled.img` width: 35px; height: 35px; border-radius: 50%; object-fit: cover; margin-top: 5px; `;
 const NameCol = styled.div` display: flex; flex-direction: column; `;
-const UserName = styled.span` font-weight: 700; color: #0984e3; font-size: 14px; `;
-const TimeText = styled.span` font-size: 10px; color: #b2bec3; `;
-const Content = styled.p` margin: 15px 0; font-size: 15px; color: #2d3436; line-height: 1.5; `;
-const PostImg = styled.img` width: 100%; border-radius: 15px; margin-bottom: 10px; `;
-const ActionRow = styled.div` display: flex; gap: 6px; cursor: pointer; align-items: center; border-top: 1px solid #f1f2f6; padding-top: 10px; width: fit-content; `;
-const PreviewWrapper = styled.div` position: relative; margin: 10px 0; `;
-const Preview = styled.img` width: 100px; border-radius: 10px; `;
-const RemovePreview = styled.button` position: absolute; top:-5px; left: 90px; background: #ff4757; color:white; border:none; border-radius:50%; width:20px; height:20px; cursor:pointer; `;
-const CommentSection = styled.div` margin-top: 15px; background: #f8f9fa; padding: 12px; border-radius: 15px; `;
-const CommentItem = styled.div` font-size: 13px; margin-bottom: 10px; border-bottom: 1px solid #f1f2f6; padding-bottom: 8px; `;
-const CommentContent = styled.div` display: flex; align-items: center; justify-content: space-between; `;
-const CommentIconBtn = styled.button` background:none; border:none; cursor:pointer; font-size: 14px; `;
-const CommentInputRow = styled.div` display: flex; gap: 5px; margin-top: 10px; `;
-const CommentInput = styled.input` flex: 1; border: 1px solid #dfe6e9; border-radius: 8px; padding: 8px 12px; font-size: 12px; outline: none; `;
-const CommentBtn = styled.button` background: #74b9ff; color: white; border: none; border-radius: 8px; padding: 0 12px; font-size: 12px; cursor:pointer; `;
+const UserName = styled.span` font-weight: 800; color: #2d3436; font-size: 18px; `;
+const TimeText = styled.span` font-size: 13px; color: #b2bec3; `;
+const Content = styled.p` margin: 30px 0; font-size: 20px; color: #2d3436; line-height: 1.8; `;
+const PostImg = styled.img` width: 100%; border-radius: 30px; margin-bottom: 25px; `;
+const ActionRow = styled.div` border-top: 1.5px solid #f8f9fa; padding-top: 20px; display: flex; gap: 20px; `;
+const LikeBtn = styled.div` display: flex; align-items: center; gap: 8px; cursor: pointer; `;
+
+// [Fact] Transient props ($) 적용: isLiked -> $isLiked
+const Heart = styled.span` font-size: 30px; color: ${props => props.$isLiked ? '#ff4757' : '#ccc'}; transition: 0.2s; &:hover { transform: scale(1.1); } `;
+const LikeCount = styled.span` font-size: 18px; font-weight: 800; color: ${props => props.$isLiked ? '#ff4757' : '#636e72'}; `;
+
+const CommentSection = styled.div` margin-top: 30px; background: #fbfcfe; padding: 30px; border-radius: 30px; `;
+const CommentItem = styled.div` margin-bottom: 20px; `;
+const CommentContent = styled.div` display: flex; gap: 12px; `;
+const CommentBubbleWrapper = styled.div` flex: 1; display: flex; flex-direction: column; gap: 5px; `;
+const CommentBubble = styled.div` background: #fff; padding: 12px 18px; border-radius: 0 20px 20px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); `;
+const CommentUser = styled.b` color: #0984e3; font-size: 14px; display: block; margin-bottom: 2px; `;
+const CommentText = styled.span` color: #636e72; font-size: 15px; line-height: 1.4; `;
+const CommentActionRow = styled.div` display: flex; gap: 15px; padding-left: 5px; `;
+
+// [Fact] Transient props ($) 적용: active -> $active
+const CommentActionItem = styled.span` font-size: 13px; color: ${props => props.$active ? '#ff4757' : '#b2bec3'}; cursor: pointer; font-weight: bold; &:hover { color: #74b9ff; } &.delete:hover { color: #ff4757; } `;
+
+const CommentInputRow = styled.div` display: flex; gap: 15px; margin-top: 25px; `;
+const CommentInput = styled.input` flex: 1; border: 2px solid #f1f2f6; border-radius: 18px; padding: 15px 20px; font-size: 16px; outline: none; transition: 0.2s; &:focus { border-color: #74b9ff; background: white; } `;
+const CommentBtn = styled.button` background: #74b9ff; color: white; border: none; border-radius: 18px; padding: 0 30px; font-size: 16px; font-weight: 800; cursor:pointer; `;
+const MenuContainer = styled.div` position: relative; `;
+const MenuBtn = styled.button` background: none; border: none; font-size: 30px; cursor: pointer; color: #dfe6e9; `;
+const MenuDropdown = styled.div` position: absolute; right: 0; top: 40px; background: white; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); z-index: 100; width: 130px; overflow: hidden; `;
+const MenuItem = styled.div` padding: 15px; font-size: 15px; cursor: pointer; text-align: center; &:hover { background: #f8fbff; color: #74b9ff; } &.delete { color: #ff7675; } `;
+const PreviewWrapper = styled.div` position: relative; margin: 20px 0; `;
+const Preview = styled.img` width: 250px; border-radius: 25px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); `;
+const RemovePreview = styled.button` position: absolute; top:-10px; left: 235px; background: #ff4757; color:white; border:none; border-radius:50%; width:30px; height:30px; cursor:pointer; font-weight: bold; `;
 
 export default FeedPage;

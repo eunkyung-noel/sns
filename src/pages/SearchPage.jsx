@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/api';
+import Swal from 'sweetalert2';
 
 const floatUp = keyframes`
   from { transform: translateY(20px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 `;
 
-// 물방울이 살짝 흔들리는 효과
 const bubbleShake = keyframes`
   0%, 100% { border-radius: 60% 40% 70% 30% / 40% 50% 60% 50%; }
   50% { border-radius: 40% 60% 30% 70% / 50% 40% 50% 60%; }
@@ -24,6 +24,7 @@ const SearchPage = () => {
         if (!searchTerm.trim()) { setUsers([]); return; }
         setLoading(true);
         try {
+            // [Fact] 백엔드 GET /api/dm/search 호출
             const res = await api.get(`/dm/search?term=${encodeURIComponent(searchTerm)}`);
             setUsers(Array.isArray(res.data) ? res.data : []);
         } catch (err) {
@@ -38,96 +39,198 @@ const SearchPage = () => {
     }, [searchTerm]);
 
     const toggleFollow = async (e, userId) => {
-        e.stopPropagation();
+        e.stopPropagation(); // 카드 클릭(프로필 이동) 이벤트 전파 방지
         try {
             const res = await api.post(`/users/follow/${userId}`);
-            setUsers(prev => prev.map(u => u.id === userId ? { ...u, isFollowing: res.data.isFollowing } : u));
-        } catch (err) { console.error('팔로우 실패'); }
+            setUsers(prev => prev.map(u =>
+                u.id === userId ? { ...u, isFollowing: res.data.isFollowing } : u
+            ));
+
+            Swal.fire({
+                title: res.data.isFollowing ? '팔로우 시작!' : '언팔로우 완료',
+                icon: 'success',
+                timer: 1000,
+                showConfirmButton: false,
+                toast: true,
+                position: 'top-end'
+            });
+        } catch (err) {
+            Swal.fire('오류', '처리에 실패했습니다.', 'error');
+        }
     };
 
     return (
-        <FullContainer>
-            <FixedHeader>
-                <HeaderContent>
+        <Container>
+            <HeaderSection>
+                <TitleCol>
                     <Title>🫧 친구 찾기</Title>
-                    <SearchInputWrapper>
-                        <span className="icon">🔍</span>
-                        <input
-                            placeholder="이름이나 이메일로 친구를 찾아보세요!"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </SearchInputWrapper>
-                </HeaderContent>
-            </FixedHeader>
+                    <SubTitle>이름이나 이메일로 새로운 인연을 찾아보세요.</SubTitle>
+                </TitleCol>
+                <SearchBar>
+                    <span className="icon">🔍</span>
+                    <input
+                        placeholder="누구를 찾고 계신가요?"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </SearchBar>
+            </HeaderSection>
 
-            <ScrollArea>
-                <ResultList>
-                    {users.map(user => (
-                        <UserCard key={user.id} onClick={() => navigate(`/profile/${user.id}`)}>
-                            <UserInfo>
-                                <Avatar>{(user.nickname || 'U')[0].toUpperCase()}</Avatar>
-                                <div className="user-text">
-                                    <div className="name-row">
-                                        <p className="name">{user.nickname}</p>
-                                        {/* ✅ 물방울 배지 적용 */}
-                                        <BubbleBadge $isAdult={user.isAdult}>
-                                            {user.isAdult ? '🐳' : '🐠'}
-                                        </BubbleBadge>
-                                    </div>
-                                    <p className="sub">{user.email}</p>
+            <ResultGrid>
+                {users.map(user => (
+                    <UserCard key={user.id} onClick={() => navigate(`/profile/${user.id}`)}>
+                        <UserInfo>
+                            <Avatar>{(user.nickname || 'U')[0].toUpperCase()}</Avatar>
+                            <UserDetail>
+                                <div className="name-row">
+                                    <span className="name">{user.nickname}</span>
+                                    <BubbleBadge $isAdult={user.isAdult}>
+                                        {user.isAdult ? '🐳' : '🐠'}
+                                    </BubbleBadge>
                                 </div>
-                            </UserInfo>
+                                <span className="email">{user.email}</span>
+                            </UserDetail>
+                        </UserInfo>
+                        <ActionArea>
                             <FollowButton
                                 $isFollowing={user.isFollowing}
                                 onClick={(e) => toggleFollow(e, user.id)}
                             >
                                 {user.isFollowing ? '팔로잉' : '팔로우'}
                             </FollowButton>
-                        </UserCard>
-                    ))}
-                    {!loading && searchTerm && users.length === 0 && <EmptyMsg> 🫧🫧찾고 있는 친구가 없어요 🫧🫧</EmptyMsg>}
-                    {loading && <EmptyMsg>... 🫧</EmptyMsg>}
-                </ResultList>
-            </ScrollArea>
-        </FullContainer>
+                        </ActionArea>
+                    </UserCard>
+                ))}
+            </ResultGrid>
+
+            {!loading && searchTerm && users.length === 0 && (
+                <EmptyState>
+                    <div className="icon">🫧</div>
+                    <p>찾고 있는 친구가 버블 안에 없어요.</p>
+                </EmptyState>
+            )}
+
+            {loading && <EmptyState><p>버블 속을 탐색 중... 🫧</p></EmptyState>}
+        </Container>
     );
 };
 
-export default SearchPage;
+/* --- 스타일 정의: 와이드 웹 최적화 --- */
 
-/* ===== 스타일 컴포넌트 ===== */
-const FullContainer = styled.div` width: 100%; min-height: 100vh; background: #f0faff; `;
-const FixedHeader = styled.div` position: fixed; top: 0; width: 100%; height: 130px; background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border-bottom: 2px solid #e1f5fe; display: flex; justify-content: center; align-items: center; z-index: 1000; `;
-const HeaderContent = styled.div` width: 100%; max-width: 500px; padding: 20px; `;
-const Title = styled.h2` text-align: center; color: #74b9ff; font-size: 20px; font-weight: 900; `;
-const SearchInputWrapper = styled.div` display: flex; align-items: center; background: #ffffff; border: 2px solid #e1f5fe; padding: 10px 18px; border-radius: 30px; input { flex: 1; border: none; background: transparent; outline: none; font-size: 15px; } .icon { margin-right: 10px; color: #74b9ff; } `;
-const ScrollArea = styled.div` padding-top: 150px; display: flex; justify-content: center; `;
-const ResultList = styled.div` width: 100%; max-width: 500px; padding: 0 20px 40px; `;
-const UserCard = styled.div` background: white; padding: 15px; border-radius: 25px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; cursor: pointer; animation: ${floatUp} 0.4s ease-out; box-shadow: 0 8px 20px rgba(116, 185, 255, 0.1); `;
-const UserInfo = styled.div` display: flex; align-items: center; gap: 15px; .name-row { display: flex; align-items: center; gap: 8px; } .name { font-weight: 800; color: #2d3436; margin: 0; } .sub { font-size: 12px; color: #b2bec3; margin: 0; } `;
-
-const Avatar = styled.div` 
-    width: 48px; height: 48px; 
-    background: linear-gradient(135deg, #e1f0ff 0%, #74b9ff 100%); 
-    border-radius: 50%; display: flex; justify-content: center; align-items: center; 
-    color: white; font-weight: bold; font-size: 18px; box-shadow: 0 4px 10px rgba(116, 185, 255, 0.3);
+const Container = styled.div`
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 0 20px;
+    min-height: 100vh;
 `;
 
-// ✅ 물방울 배지 스타일 (Bubble Concept)
-const BubbleBadge = styled.div`
+const HeaderSection = styled.div`
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    width: 32px;
-    height: 32px;
-    font-size: 16px;
-    background: ${props => props.$isAdult ? 'rgba(116, 185, 255, 0.2)' : 'rgba(255, 118, 117, 0.1)'};
-    border: 2px solid ${props => props.$isAdult ? '#74b9ff' : '#ff7675'};
-    border-radius: 60% 40% 70% 30% / 40% 50% 60% 50%; /* 유기적인 물방울 모양 */
-    animation: ${bubbleShake} 4s ease-in-out infinite;
-    box-shadow: inset 2px 2px 5px rgba(255, 255, 255, 0.5);
+    gap: 30px;
+    margin-bottom: 50px;
+    text-align: center;
 `;
 
-const FollowButton = styled.button` border: none; padding: 8px 20px; border-radius: 20px; font-size: 12px; font-weight: 800; cursor: pointer; background: ${p => (p.$isFollowing ? '#f1f2f6' : '#74b9ff')}; color: ${p => (p.$isFollowing ? '#b2bec3' : 'white')}; transition: 0.3s; box-shadow: ${p => p.$isFollowing ? 'none' : '0 4px 12px rgba(116, 185, 255, 0.3)'}; &:active { transform: scale(0.95); } `;
-const EmptyMsg = styled.div` text-align: center; margin-top: 60px; color: #74b9ff; font-weight: 800; font-size: 16px; `;
+const TitleCol = styled.div` display: flex; flex-direction: column; gap: 8px; `;
+const Title = styled.h2` margin: 0; font-size: 32px; font-weight: 900; color: #2d3436; `;
+const SubTitle = styled.span` font-size: 16px; color: #b2bec3; `;
+
+const SearchBar = styled.div`
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    align-items: center;
+    background: white;
+    padding: 15px 25px;
+    border-radius: 20px;
+    box-shadow: 0 10px 25px rgba(116, 185, 255, 0.1);
+    border: 2px solid #f0f7ff;
+    
+    .icon { font-size: 20px; margin-right: 15px; color: #74b9ff; }
+    input { 
+        flex: 1; border: none; outline: none; font-size: 17px; color: #2d3436; 
+        &::placeholder { color: #ccc; }
+    }
+    &:focus-within { border-color: #74b9ff; }
+`;
+
+const ResultGrid = styled.div`
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* 🔍 가로 2열 배치로 넓게 활용 */
+    gap: 20px;
+    @media (max-width: 768px) { grid-template-columns: 1fr; }
+`;
+
+const UserCard = styled.div`
+    background: white;
+    padding: 25px;
+    border-radius: 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    animation: ${floatUp} 0.4s ease-out;
+    border: 1px solid #f1f2f6;
+    transition: all 0.2s;
+
+    &:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 12px 30px rgba(116, 185, 255, 0.15);
+    }
+`;
+
+const UserInfo = styled.div` display: flex; align-items: center; gap: 15px; `;
+
+const Avatar = styled.div`
+    width: 55px; height: 55px;
+    background: linear-gradient(135deg, #e1f0ff 0%, #74b9ff 100%);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 900; font-size: 20px;
+    box-shadow: 0 4px 10px rgba(116, 185, 255, 0.3);
+`;
+
+const UserDetail = styled.div`
+    display: flex; flex-direction: column; gap: 4px;
+    .name-row { display: flex; align-items: center; gap: 8px; }
+    .name { font-size: 17px; font-weight: 800; color: #2d3436; }
+    .email { font-size: 13px; color: #b2bec3; }
+`;
+
+const BubbleBadge = styled.div`
+    display: flex; justify-content: center; align-items: center;
+    width: 28px; height: 28px; font-size: 14px;
+    background: white;
+    border: 2px solid ${props => props.$isAdult ? '#74b9ff' : '#ff7675'};
+    border-radius: 60% 40% 70% 30% / 40% 50% 60% 50%;
+    animation: ${bubbleShake} 4s ease-in-out infinite;
+`;
+
+const ActionArea = styled.div` display: flex; align-items: center; `;
+
+const FollowButton = styled.button`
+    border: none;
+    padding: 10px 20px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.3s;
+    background: ${p => (p.$isFollowing ? '#f1f2f6' : '#74b9ff')};
+    color: ${p => (p.$isFollowing ? '#b2bec3' : 'white')};
+    
+    &:hover {
+        background: ${p => (p.$isFollowing ? '#e1e2e6' : '#1a2a6c')};
+        color: white;
+    }
+`;
+
+const EmptyState = styled.div`
+    text-align: center; margin-top: 100px;
+    .icon { font-size: 60px; margin-bottom: 20px; opacity: 0.5; }
+    p { color: #74b9ff; font-weight: 800; font-size: 18px; }
+`;
+
+export default SearchPage;

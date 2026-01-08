@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import styled, { keyframes } from 'styled-components';
 import Swal from 'sweetalert2';
 
-// 둥실둥실 비눗방울 애니메이션
 const bubbleFloat = keyframes`
   0% { transform: translateY(0px); }
   50% { transform: translateY(-4px); }
@@ -14,7 +13,6 @@ const Navbar = ({ setIsPostModalOpen }) => {
     const navigate = useNavigate();
     const location = useLocation();
 
-    // 로그아웃 처리
     const handleLogout = () => {
         Swal.fire({
             title: '로그아웃',
@@ -34,42 +32,52 @@ const Navbar = ({ setIsPostModalOpen }) => {
 
     return (
         <NavContainer>
-            {/* 🏠 홈 버튼: 클릭 시 피드 페이지로 이동 */}
-            <NavItem
-                $active={location.pathname === '/feed'}
-                onClick={() => navigate('/feed')}
-            >
-                🏠
-            </NavItem>
+            <NavInner>
+                {/* 🫧 소개 페이지 추가 */}
+                <NavItem
+                    $active={location.pathname === '/about'}
+                    onClick={() => navigate('/about')}
+                >
+                    🫧
+                </NavItem>
 
-            <NavItem
-                $active={location.pathname === '/search'}
-                onClick={() => navigate('/search')}
-            >
-                🔍
-            </NavItem>
+                {/* 🏠 홈 & 🔍 검색 */}
+                <NavItem
+                    $active={location.pathname === '/feed'}
+                    onClick={() => navigate('/feed')}
+                >
+                    🏠
+                </NavItem>
 
-            {/* ➕ 중앙 게시글 작성 버튼: 클릭 시 App.js의 PostModal 오픈 */}
-            <AddBtn onClick={() => setIsPostModalOpen(true)}>
-                ➕
-            </AddBtn>
+                <NavItem
+                    $active={location.pathname === '/search'}
+                    onClick={() => navigate('/search')}
+                >
+                    🔍
+                </NavItem>
 
-            <NavItem
-                $active={location.pathname === '/dm'}
-                onClick={() => navigate('/dm')}
-            >
-                📩
-            </NavItem>
+                {/* ➕ 추가 버튼 */}
+                <AddBtn onClick={() => setIsPostModalOpen(true)}>
+                    ➕
+                </AddBtn>
 
-            {/* 👤 마이페이지 버튼 */}
-            <NavItem
-                $active={location.pathname === '/mypage' || location.pathname === '/profile'}
-                onClick={() => navigate('/mypage')}
-            >
-                👤
-            </NavItem>
+                {/* 📩 DM & 👤 프로필 & 🚪 로그아웃 */}
+                <NavItem
+                    $active={location.pathname === '/dm'}
+                    onClick={() => navigate('/dm')}
+                >
+                    📩
+                </NavItem>
 
-            <NavItem onClick={handleLogout}>🚪</NavItem>
+                <NavItem
+                    $active={location.pathname === '/mypage' || location.pathname === '/profile'}
+                    onClick={() => navigate('/mypage')}
+                >
+                    👤
+                </NavItem>
+
+                <NavItem onClick={handleLogout}>🚪</NavItem>
+            </NavInner>
         </NavContainer>
     );
 };
@@ -79,23 +87,35 @@ export default Navbar;
 const NavContainer = styled.nav`
     position: fixed;
     bottom: 0;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 0;
     width: 100%;
-    max-width: 500px;
-    height: 75px;
-    background: #ffffff;
+    height: 70px;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(10px);
     display: flex;
-    justify-content: space-around;
+    justify-content: center;
     align-items: center;
     border-top: 1px solid #f1f2f6;
     z-index: 1000;
-    box-shadow: 0 -5px 15px rgba(0,0,0,0.05);
-    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+`;
+
+const NavInner = styled.div`
+    width: auto;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 30px;            /* 아이콘 개수가 늘어났으므로 간격을 30px로 조정 */
+    padding: 0 20px;
+    box-sizing: border-box;
+
+    @media (min-width: 1024px) {
+        gap: 50px;
+    }
 `;
 
 const NavItem = styled.div`
-    font-size: 22px;
+    font-size: 26px;
     cursor: pointer;
     transition: 0.3s;
     opacity: ${props => (props.$active ? '1' : '0.4')};
@@ -108,19 +128,20 @@ const NavItem = styled.div`
 `;
 
 const AddBtn = styled.div`
-    width: 48px;
-    height: 48px;
+    width: 50px;          /* 다른 버튼들과의 조화를 위해 크기 살짝 조정 */
+    height: 50px;
     background: #74b9ff;
     color: white;
     border-radius: 50%;
-    font-size: 20px;
+    font-size: 22px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: inset -4px -4px 8px rgba(0,0,0,0.1), 0 6px 12px rgba(116, 185, 255, 0.3);
+    box-shadow: 0 4px 12px rgba(116, 185, 255, 0.4);
     transition: 0.3s;
     animation: ${bubbleFloat} 3.5s ease-in-out infinite;
+    margin: 0 5px;
 
     &:hover {
         background: #0984e3;

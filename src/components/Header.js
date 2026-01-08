@@ -13,34 +13,45 @@ function Header() {
 
     return (
         <HeaderContainer>
-            {/* 🔍 로고를 🫧로 변경 및 /about으로 연결 */}
-            <BubbleLogo onClick={() => navigate('/about')}>🫧</BubbleLogo>
+            <InnerContent>
+                {/* 로고를 왼쪽이나 중앙 중 원하는 곳에 배치 가능 (현재는 중앙) */}
+                <BubbleLogo onClick={() => navigate('/about')}>🫧</BubbleLogo>
+
+                {/* 만약 우측에 메뉴를 추가할 계획이라면 여기에 위치시키면 됩니다 */}
+            </InnerContent>
         </HeaderContainer>
     );
 }
 
 export default Header;
 
-const HeaderContainer = styled.div`
+const HeaderContainer = styled.header`
     display: flex;
-    justify-content: center; /* 🔍 중앙 정렬 */
+    justify-content: center;
     align-items: center;
-    padding: 10px 0;
     background: rgba(255, 255, 255, 0.8);
     backdrop-filter: blur(10px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    position: fixed; /* 🔍 상단 고정 */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    position: fixed;
     top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 100%;
-    max-width: 500px;
-    height: 60px;
+    left: 0;          
+    width: 100%;       
+    height: 65px;      
     z-index: 1100;
 `;
 
+const InnerContent = styled.div`
+    width: 100%;
+    max-width: 1200px; 
+    display: flex;
+    justify-content: center; 
+    align-items: center;
+    padding: 0 20px;
+    box-sizing: border-box;
+`;
+
 const BubbleLogo = styled.div`
-    font-size: 30px;
+    font-size: 32px; 
     cursor: pointer;
     animation: ${bubbleFloat} 3s ease-in-out infinite;
     user-select: none;

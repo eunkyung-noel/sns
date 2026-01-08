@@ -1,24 +1,27 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import api from '../api/api';
 import Swal from 'sweetalert2';
-import { useNavigate } from 'react-router-dom';
 
 const MyPage = () => {
     const [user, setUser] = useState(null);
     const [myPosts, setMyPosts] = useState([]);
     const [myReports, setMyReports] = useState([]);
     const [isEditing, setIsEditing] = useState(false);
-    const [viewMode, setViewMode] = useState('posts'); // 'posts' or 'reports'
+    const [viewMode, setViewMode] = useState('posts');
     const [loading, setLoading] = useState(true);
 
-    const [editData, setEditData] = useState({ nickname: '', bio: '', language: 'ko' });
+    const [editData, setEditData] = useState({
+        nickname: '',
+        bio: '',
+        password: '',
+        confirmPassword: ''
+    });
+
     const fileInputRef = useRef(null);
     const navigate = useNavigate();
     const SERVER_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001';
-
-    // ✅ 내 ID: 비교 안전성을 위해 String 변환
-    const myId = localStorage.getItem('userId') ? String(localStorage.getItem('userId')) : null;
 
     const fetchData = async () => {
         try {
@@ -30,22 +33,18 @@ const MyPage = () => {
             ]);
 
             const userData = userRes.data.user || userRes.data;
-            const allPosts = Array.isArray(postsRes.data) ? postsRes.data : [];
-            const reports = Array.isArray(reportRes.data) ? reportRes.data : [];
-
             if (userData && userData.id) {
                 setUser(userData);
                 setEditData({
                     nickname: userData.nickname || '',
                     bio: userData.bio || '',
-                    language: userData.language || 'ko'
+                    password: '',
+                    confirmPassword: ''
                 });
 
-                const filtered = allPosts.filter(p =>
-                    String(p.authorId || p.userId) === String(userData.id)
-                );
-                setMyPosts(filtered);
-                setMyReports(reports);
+                const allPosts = Array.isArray(postsRes.data) ? postsRes.data : [];
+                setMyPosts(allPosts.filter(p => String(p.authorId || p.userId) === String(userData.id)));
+                setMyReports(Array.isArray(reportRes.data) ? reportRes.data : []);
             }
         } catch (err) {
             console.error("데이터 로딩 실패:", err);
@@ -56,35 +55,29 @@ const MyPage = () => {
 
     useEffect(() => { fetchData(); }, []);
 
-    // ✅ 좋아요 토글 (구조 파악 및 낙관적 업데이트 수정)
-    const handleLike = async (e, postId) => {
-        e.stopPropagation();
-        e.preventDefault();
-
-        if (!myId) return;
-
-        setMyPosts(prev => prev.map(p => {
-            if (String(p.id) === String(postId)) {
-                const currentLikes = p.likes || [];
-                // 객체 형태 {userId: '...'} 인지 확인하여 비교
-                const isLiked = currentLikes.some(l =>
-                    String(typeof l === 'object' ? l.userId : l) === myId
-                );
-
-                const newLikes = isLiked
-                    ? currentLikes.filter(l => String(typeof l === 'object' ? l.userId : l) !== myId)
-                    : [...currentLikes, { userId: myId, postId: postId }];
-
-                return { ...p, likes: newLikes };
-            }
-            return p;
-        }));
-
+    const handleSaveProfile = async () => {
         try {
-            await api.post(`/posts/${postId}/like`);
-        } catch (err) {
-            console.error("좋아요 실패:", err);
+            // 비밀번호 변경 로직
+            if (editData.password) {
+                if (editData.password !== editData.confirmPassword) {
+                    return Swal.fire('알림', '비밀번호가 일치하지 않습니다.', 'warning');
+                }
+                await api.put('/auth/change-password', { password: editData.password });
+            }
+
+            // [Fact] 언어 설정을 제외한 업데이트 데이터 구성
+            const updatePayload = {
+                nickname: editData.nickname,
+                bio: editData.bio
+            };
+
+            await api.put('/auth/profile', updatePayload);
+            await Swal.fire('성공', '프로필이 수정되었습니다. 🫧', 'success');
+            setIsEditing(false);
             fetchData();
+        } catch (err) {
+            const errorMsg = err.response?.data?.message || '수정 중 오류가 발생했습니다.';
+            Swal.fire('에러', errorMsg, 'error');
         }
     };
 
@@ -97,139 +90,145 @@ const MyPage = () => {
     if (!user) return null;
 
     return (
-        <Container>
-            <ProfileSection>
-                <AvatarWrapper onClick={() => isEditing && fileInputRef.current.click()}>
-                    <Avatar src={user.profilePic ? getFullImageUrl(user.profilePic) : `https://ui-avatars.com/api/?name=${user.nickname}&background=74b9ff&color=fff`} />
-                    {isEditing && <Overlay>변경</Overlay>}
-                    <input type="file" ref={fileInputRef} hidden accept="image/*" />
-                </AvatarWrapper>
-                <InfoWrapper>
-                    <div className="name-row">
-                        <h2>@{user.nickname}</h2>
-                        <BtnGroup>
-                            <GrayBtn onClick={() => setIsEditing(!isEditing)}>
-                                {isEditing ? '취소' : '편집'}
-                            </GrayBtn>
-                            <GrayBtn onClick={() => setViewMode(viewMode === 'posts' ? 'reports' : 'posts')}>
-                                {viewMode === 'posts' ? '🚨 신고 기록' : '🖼️ 게시물 보기'}
-                            </GrayBtn>
-                        </BtnGroup>
-                    </div>
-                    <StatsRow>
-                        <StatItem>게시물 <b>{myPosts.length}</b></StatItem>
-                        <StatItem>신고 <b>{myReports.length}</b></StatItem>
-                        <StatItem>팔로워 <b>{user.followers?.length || 0}</b></StatItem>
-                    </StatsRow>
-                    <p className="bio">{user.bio || "자기소개가 비어있습니다."}</p>
-                </InfoWrapper>
-            </ProfileSection>
+        <FullBackground>
+            <Container>
+                <ProfileCard>
+                    <AvatarWrapper onClick={() => isEditing && fileInputRef.current.click()}>
+                        <Avatar src={user.profilePic ? getFullImageUrl(user.profilePic) : `https://ui-avatars.com/api/?name=${user.nickname}&background=74b9ff&color=fff`} />
+                        {isEditing && <Overlay>변경</Overlay>}
+                        <input type="file" ref={fileInputRef} hidden accept="image/*" />
+                    </AvatarWrapper>
 
-            <SectionDivider>
-                {viewMode === 'posts' ? '내 게시물' : '내 신고 내역'}
-            </SectionDivider>
+                    <InfoWrapper>
+                        <div className="header-row">
+                            {isEditing ? (
+                                <EditInput
+                                    value={editData.nickname}
+                                    onChange={e => setEditData({...editData, nickname: e.target.value})}
+                                    placeholder="닉네임"
+                                />
+                            ) : (
+                                <Nickname>@{user.nickname}</Nickname>
+                            )}
+                            <BtnGroup>
+                                <EditBtn onClick={isEditing ? handleSaveProfile : () => setIsEditing(true)} $isEditing={isEditing}>
+                                    {isEditing ? '변경 저장' : '프로필 편집'}
+                                </EditBtn>
+                                {isEditing && (
+                                    <CancelBtn onClick={() => { setIsEditing(false); fetchData(); }}>취소</CancelBtn>
+                                )}
+                                {!isEditing && (
+                                    <ModeBtn onClick={() => setViewMode(viewMode === 'posts' ? 'reports' : 'posts')}>
+                                        {viewMode === 'posts' ? '🚨 신고 내역' : '🖼️ 게시물'}
+                                    </ModeBtn>
+                                )}
+                            </BtnGroup>
+                        </div>
 
-            {viewMode === 'posts' ? (
-                <Grid>
-                    {myPosts.length > 0 ? (
-                        myPosts.map(p => {
-                            // ✅ 여기서도 객체 구조 체크 필수
-                            const isLiked = (p.likes || []).some(l =>
-                                String(typeof l === 'object' ? l.userId : l) === myId
-                            );
-                            return (
-                                <PostItem key={p.id} onClick={() => navigate(`/post/${p.id}`)}>
-                                    {p.imageUrl ? (
-                                        <img src={getFullImageUrl(p.imageUrl)} alt="" />
-                                    ) : (
-                                        <NoImgText>{p.content?.substring(0, 15)}...</NoImgText>
-                                    )}
-                                    <PostOverlay>
-                                        <OverlayItem
-                                            onClick={(e) => handleLike(e, p.id)}
-                                            $active={isLiked}
-                                        >
-                                            <span className="icon">{isLiked ? '❤️' : '🤍'}</span>
-                                            <b className="count">{p.likes?.length || 0}</b>
-                                        </OverlayItem>
-                                        <OverlayItem>
-                                            <span className="icon">💬</span>
-                                            <b className="count">{p.comments?.length || 0}</b>
-                                        </OverlayItem>
-                                    </PostOverlay>
-                                </PostItem>
-                            );
-                        })
-                    ) : (
-                        <EmptyMsg>작성한 게시물이 없습니다.</EmptyMsg>
-                    )}
-                </Grid>
-            ) : (
-                <ReportList>
-                    {myReports.length === 0 ? <EmptyMsg>신고 내역이 없습니다.</EmptyMsg> :
-                        myReports.map((report, idx) => (
-                            <ReportItem key={report.id || idx}>
-                                <div className="header">
-                                    <span className="badge">처리중</span>
-                                    <span className="date">{new Date(report.createdAt).toLocaleDateString()}</span>
-                                </div>
-                                <div className="reason">사유: {report.reason}</div>
-                                <div className="target">
-                                    대상: {report.targetPost ? `게시글 #${report.targetPost.id}` : '댓글'}
-                                </div>
-                            </ReportItem>
-                        ))
-                    }
-                </ReportList>
-            )}
-        </Container>
+                        <StatsRow>
+                            <StatItem>게시물 <b>{myPosts.length}</b></StatItem>
+                            <StatItem>신고 <b>{myReports.length}</b></StatItem>
+                            <StatItem>팔로워 <b>{user.followers?.length || 0}</b></StatItem>
+                        </StatsRow>
+
+                        {isEditing ? (
+                            <EditArea>
+                                <Label>한줄 소개</Label>
+                                <EditTextArea
+                                    value={editData.bio}
+                                    onChange={e => setEditData({...editData, bio: e.target.value})}
+                                    placeholder="자신을 소개해보세요. 🫧"
+                                />
+                                <InputGrid>
+                                    <Field>
+                                        <Label>비밀번호 변경</Label>
+                                        <EditInput
+                                            type="password"
+                                            placeholder="새 비밀번호"
+                                            value={editData.password}
+                                            onChange={e => setEditData({...editData, password: e.target.value})}
+                                        />
+                                    </Field>
+                                    <Field>
+                                        <Label>비밀번호 확인</Label>
+                                        <EditInput
+                                            type="password"
+                                            placeholder="비밀번호 확인"
+                                            value={editData.confirmPassword}
+                                            onChange={e => setEditData({...editData, confirmPassword: e.target.value})}
+                                        />
+                                    </Field>
+                                </InputGrid>
+                            </EditArea>
+                        ) : (
+                            <BioText>{user.bio || "아직 자기소개가 없습니다. 🫧"}</BioText>
+                        )}
+                    </InfoWrapper>
+                </ProfileCard>
+
+                <TabArea>
+                    <TabItem $active={viewMode === 'posts'}>
+                        {viewMode === 'posts' ? 'POSTS' : 'REPORTS'}
+                    </TabItem>
+                </TabArea>
+
+                {viewMode === 'posts' ? (
+                    <PostGrid>
+                        {myPosts.map(p => (
+                            <PostCard key={p.id} onClick={() => navigate(`/post/${p.id}`)}>
+                                {p.imageUrl ? <img src={getFullImageUrl(p.imageUrl)} alt="" /> : <NoImgBox>{p.content?.substring(0, 30)}...</NoImgBox>}
+                            </PostCard>
+                        ))}
+                    </PostGrid>
+                ) : (
+                    <ReportContainer>
+                        {myReports.length > 0 ? (
+                            myReports.map((report, idx) => (
+                                <ReportCard key={report.id || idx}>
+                                    <ReasonText>사유: {report.reason}</ReasonText>
+                                </ReportCard>
+                            ))
+                        ) : (
+                            <EmptyMsg>신고 내역이 없습니다. 🚨</EmptyMsg>
+                        )}
+                    </ReportContainer>
+                )}
+            </Container>
+        </FullBackground>
     );
 };
 
-const Container = styled.div`max-width: 600px; margin: 0 auto; padding: 40px 20px;`;
-const ProfileSection = styled.div`display: flex; gap: 30px; margin-bottom: 30px;`;
-const AvatarWrapper = styled.div`width: 90px; height: 90px; border-radius: 50%; overflow: hidden; position: relative; cursor: pointer; border: 1px solid #eee; flex-shrink: 0;`;
-const Avatar = styled.img`width: 100%; height: 100%; object-fit: cover;`;
-const Overlay = styled.div`position: absolute; inset: 0; background: rgba(0,0,0,0.4); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px;`;
-const InfoWrapper = styled.div`flex: 1; .name-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; } h2 { margin: 0; font-size: 20px; } .bio { color: #666; font-size: 14px; margin-top: 5px; }`;
-const BtnGroup = styled.div`display: flex; gap: 8px;`;
-const GrayBtn = styled.button`background: #efefef; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; &:hover { background: #e0e0e0; }`;
-const StatsRow = styled.div`display: flex; gap: 20px; margin-bottom: 10px;`;
-const StatItem = styled.div`font-size: 14px; b { font-weight: 700; margin-left: 4px; }`;
-const SectionDivider = styled.div`border-top: 1px solid #eee; padding: 15px 0; margin-top: 10px; text-align: center; font-weight: bold; font-size: 14px; color: #888; letter-spacing: 1px;`;
-const Grid = styled.div`display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px;`;
-const PostItem = styled.div` aspect-ratio: 1/1; background: #f8f9fa; position: relative; cursor: pointer; img { width: 100%; height: 100%; object-fit: cover; } &:hover > div { display: flex; } `;
-const PostOverlay = styled.div` position: absolute; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; gap: 20px; color: white; `;
-
-// ✅ 하트 색상 변경을 위해 $active 프롭 사용 및 내부 요소 색상 강제 지정
-const OverlayItem = styled.div`
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    cursor: pointer;
-    transition: transform 0.1s ease;
-
-    .icon {
-        font-size: 20px;
-        filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
-    }
-
-    .count {
-        font-weight: bold;
-        text-shadow: 0 0 4px rgba(0,0,0,0.8);
-        /* ✅ 활성화 상태일 때 글자색을 빨간색으로 변경 */
-        color: ${props => props.$active ? '#ff4757' : '#ffffff'};
-    }
-
-    &:hover {
-        transform: scale(1.1);
-    }
-`;
-
-const NoImgText = styled.div`display: flex; align-items: center; justify-content: center; height: 100%; font-size: 12px; color: #aaa; background: #eee; text-align: center; padding: 10px;`;
-const Loading = styled.div`display: flex; align-items: center; justify-content: center; height: 80vh; color: #74b9ff; font-weight: bold;`;
-const EmptyMsg = styled.div`grid-column: span 3; text-align: center; padding: 60px 0; color: #ccc; font-size: 14px;`;
-const ReportList = styled.div`display: flex; flex-direction: column; gap: 12px;`;
-const ReportItem = styled.div`padding: 16px; border: 1px solid #eee; border-radius: 8px; background: #fff; .header { display: flex; justify-content: space-between; margin-bottom: 8px; } .badge { background: #ffeb3b; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; } .date { font-size: 12px; color: #999; } .reason { font-weight: bold; margin-bottom: 4px; } .target { font-size: 12px; color: #666; }`;
+/* --- 스타일 정의 --- */
+const FullBackground = styled.div` width: 100%; min-height: 100vh; background-color: #f8fbff; `;
+const Container = styled.div` max-width: 1000px; margin: 0 auto; padding: 60px 20px 100px; `;
+const ProfileCard = styled.div` background: white; padding: 50px; border-radius: 40px; display: flex; gap: 60px; box-shadow: 0 15px 40px rgba(116, 185, 255, 0.06); margin-bottom: 50px; align-items: flex-start; @media (max-width: 768px) { flex-direction: column; align-items: center; text-align: center; gap: 30px; } `;
+const AvatarWrapper = styled.div` width: 160px; height: 160px; border-radius: 50%; overflow: hidden; position: relative; cursor: pointer; border: 5px solid #f0f7ff; flex-shrink: 0; `;
+const Avatar = styled.img` width: 100%; height: 100%; object-fit: cover; `;
+const Overlay = styled.div` position: absolute; inset: 0; background: rgba(0,0,0,0.3); color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; `;
+const InfoWrapper = styled.div` flex: 1; .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; @media (max-width: 768px) { flex-direction: column; gap: 20px; } } `;
+const Nickname = styled.h2` font-size: 32px; font-weight: 900; color: #2d3436; margin: 0; `;
+const EditArea = styled.div` display: flex; flex-direction: column; gap: 15px; margin-top: 10px; `;
+const InputGrid = styled.div` display: flex; gap: 20px; margin-top: 10px; @media (max-width: 768px) { flex-direction: column; } `;
+const Field = styled.div` flex: 1; display: flex; flex-direction: column; gap: 8px; `;
+const Label = styled.label` font-size: 14px; font-weight: 800; color: #74b9ff; text-align: left; `;
+const EditInput = styled.input` padding: 12px 15px; border-radius: 12px; border: 2px solid #f1f2f6; font-size: 16px; outline: none; &:focus { border-color: #74b9ff; } `;
+const EditTextArea = styled.textarea` padding: 12px 15px; border-radius: 12px; border: 2px solid #f1f2f6; font-size: 16px; outline: none; resize: none; min-height: 80px; &:focus { border-color: #74b9ff; } `;
+const BtnGroup = styled.div` display: flex; gap: 10px; `;
+const EditBtn = styled.button` padding: 12px 24px; border-radius: 15px; border: 2px solid #74b9ff; background: ${p => p.$isEditing ? '#74b9ff' : 'white'}; color: ${p => p.$isEditing ? 'white' : '#74b9ff'}; font-weight: 800; cursor: pointer; transition: 0.2s; `;
+const CancelBtn = styled.button` padding: 12px 24px; border-radius: 15px; background: #ff4757; color: white; border: none; font-weight: 800; cursor: pointer; `;
+const ModeBtn = styled.button` padding: 12px 24px; border-radius: 15px; border: none; background: #f1f2f6; color: #636e72; font-weight: 800; cursor: pointer; `;
+const StatsRow = styled.div` display: flex; gap: 40px; margin-bottom: 25px; @media (max-width: 768px) { justify-content: center; } `;
+const StatItem = styled.div` font-size: 18px; color: #2d3436; b { font-weight: 900; color: #74b9ff; margin-left: 6px; } `;
+const BioText = styled.p` font-size: 17px; color: #636e72; line-height: 1.6; margin: 0; `;
+const TabArea = styled.div` border-top: 2px solid #e1f0ff; display: flex; justify-content: center; margin-bottom: 30px; `;
+const TabItem = styled.div` padding: 20px 40px; border-top: 3px solid ${p => p.$active ? '#74b9ff' : 'transparent'}; margin-top: -2px; font-weight: 900; color: ${p => p.$active ? '#74b9ff' : '#b2bec3'}; font-size: 16px; letter-spacing: 3px; transition: 0.3s; `;
+const PostGrid = styled.div` display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; @media (max-width: 768px) { grid-template-columns: repeat(2, 1fr); } `;
+const PostCard = styled.div` aspect-ratio: 1/1; background: white; border-radius: 20px; overflow: hidden; border: 1.5px solid #e1f0ff; transition: 0.3s; cursor: pointer; img { width: 100%; height: 100%; object-fit: cover; } &:hover { border-color: #74b9ff; transform: translateY(-5px); } `;
+const NoImgBox = styled.div` height: 100%; display: flex; align-items: center; justify-content: center; background: #fbfcfe; color: #b2bec3; padding: 25px; text-align: center; font-size: 16px; `;
+const ReportContainer = styled.div` display: flex; flex-direction: column; gap: 20px; `;
+const ReportCard = styled.div` background: white; padding: 30px; border-radius: 25px; border: 1.5px solid #e1f0ff; `;
+const ReasonText = styled.div` font-weight: 800; font-size: 18px; color: #2d3436; `;
+const EmptyMsg = styled.div` text-align: center; padding: 50px; color: #b2bec3; font-size: 18px; font-weight: 800; `;
+const Loading = styled.div` display: flex; align-items: center; justify-content: center; height: 80vh; color: #74b9ff; font-weight: bold; font-size: 24px; `;
 
 export default MyPage;

@@ -1,19 +1,15 @@
-// src/pages/auth/VerifyPage.js
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../api';
 
 function VerifyPage() {
-    // 1. 상태 변수 정의
     const [verificationStatus, setVerificationStatus] = useState('인증 진행 중...');
     const [isSuccess, setIsSuccess] = useState(false);
 
-    // URL에서 토큰 값(params)을 가져오는 React Router 훅
     const { token } = useParams();
     const navigate = useNavigate();
 
-    // 2. 컴포넌트 마운트 시 인증 API 호출
     useEffect(() => {
         const verifyAccount = async () => {
             if (!token) {
@@ -22,17 +18,12 @@ function VerifyPage() {
             }
 
             try {
-                //  백엔드 API 호출: GET /auth/verify/:token
                 const response = await api.get(`/auth/verify/${token}`);
-
-                // 인증 성공 처리
                 setVerificationStatus(
                     response.data.message || '인증이 완료되었습니다! 로그인해 주세요.'
                 );
                 setIsSuccess(true);
-
             } catch (error) {
-                // 인증 실패 처리
                 console.error('인증 실패:', error);
                 setVerificationStatus(
                     error.response?.data?.message || '인증에 실패했거나 만료된 링크입니다.'
@@ -42,9 +33,8 @@ function VerifyPage() {
         };
 
         verifyAccount();
-    }, [token]); // token이 변경될 때만 다시 실행
+    }, [token]);
 
-    // 3. 로그인 페이지로 이동 버튼 핸들러
     const goToLogin = () => {
         navigate('/login');
     };
@@ -52,12 +42,14 @@ function VerifyPage() {
     return (
         <Container>
             <ContentBox isSuccess={isSuccess}>
-                <h1>{isSuccess ? ' 인증 완료' : ' 인증 결과'}</h1>
+                <IconWrapper isSuccess={isSuccess}>
+                    {isSuccess ? '🫧' : '⚠️'}
+                </IconWrapper>
+                <h1>{isSuccess ? '인증 완료' : '인증 결과'}</h1>
                 <StatusText isSuccess={isSuccess}>
                     {verificationStatus}
                 </StatusText>
 
-                {/* 성공/실패 여부와 관계없이 로그인 페이지로 이동 버튼 표시 */}
                 <Button onClick={goToLogin}>
                     로그인 페이지로 이동
                 </Button>
@@ -68,51 +60,68 @@ function VerifyPage() {
 
 export default VerifyPage;
 
-//  스타일 정의 (연두색/흰색 테마 사용)
+/* --- 스타일: 연두색을 제거하고 하늘색(Bubble) 테마 적용 --- */
+
 const Container = styled.div`
   display: flex;
   justify-content: center;
   align-items: center;
   height: 100vh;
   width: 100%;
-  background-color: #e8f5e9; /* 밝은 연두색 배경 */
+  background-color: #f0f8ff; /* 🔍 연두색에서 하늘색 배경으로 수정 */
 `;
 
 const ContentBox = styled.div`
   background: white;
-  padding: 50px 60px;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 80px 60px;
+  border-radius: 24px;
+  box-shadow: 0 10px 30px rgba(116, 185, 255, 0.1); /* 🔍 그림자에도 하늘색 톤 반영 */
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  width: 450px;
+  width: 100%;
+  max-width: 600px;
+  
   h1 {
-    color: ${props => (props.isSuccess ? '#43a047' : '#ef5350')}; /* 성공/실패에 따라 색상 변경 */
-    margin-bottom: 20px;
+    color: ${props => (props.isSuccess ? '#74b9ff' : '#ff7675')}; /* 🔍 성공 시 하늘색 적용 */
+    margin-bottom: 25px;
+    font-size: 32px;
   }
 `;
 
+const IconWrapper = styled.div`
+  font-size: 64px;
+  margin-bottom: 20px;
+`;
+
 const StatusText = styled.p`
-  font-size: 18px;
-  margin-bottom: 30px;
-  color: ${props => (props.isSuccess ? '#43a047' : '#ef5350')};
+  font-size: 20px;
+  margin-bottom: 45px;
+  color: ${props => (props.isSuccess ? '#0984e3' : '#d63031')}; /* 🔍 텍스트 대비 향상 */
   font-weight: 500;
+  line-height: 1.6;
 `;
 
 const Button = styled.button`
-  padding: 12px 25px;
-  background-color: #81c784;
+  padding: 18px 40px;
+  background-color: #74b9ff; /* 🔍 메인 하늘색 적용 */
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 16px;
+  border-radius: 12px;
+  font-size: 18px;
   font-weight: bold;
   cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-  transition: background-color 0.3s;
+  box-shadow: 0 4px 15px rgba(116, 185, 255, 0.3);
+  transition: all 0.3s ease;
+  
   &:hover {
-    background-color: #66bb6a;
+    background-color: #0984e3; /* 🔍 호버 시 진한 하늘색 */
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(116, 185, 255, 0.4);
+  }
+  
+  &:active {
+    transform: translateY(0);
   }
 `;

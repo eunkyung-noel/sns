@@ -1,7 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 
-// 🌟 이미지 저장 설정 (파일이 저장될 위치와 이름 규칙)
+//  이미지 저장 설정 (파일이 저장될 위치와 이름 규칙)
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         cb(null, 'uploads/'); // 프로젝트 루트에 uploads 폴더가 있어야 함
