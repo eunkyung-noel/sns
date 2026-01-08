@@ -85,10 +85,13 @@ const getMessagesWithUser = async (req, res) => {
     try {
         const myId = req.userId;
         const opponentId = req.params.userId;
+
+        // 조회 시 즉시 읽음 처리
         await prisma.message.updateMany({
             where: { senderId: opponentId, receiverId: myId, isRead: false },
             data: { isRead: true }
         });
+
         const chatHistory = await prisma.message.findMany({
             where: { OR: [{ senderId: myId, receiverId: opponentId }, { senderId: opponentId, receiverId: myId }] },
             orderBy: { createdAt: 'asc' },
@@ -100,23 +103,42 @@ const getMessagesWithUser = async (req, res) => {
     }
 };
 
-// [조건 2] 메시지 전송 (프론트엔드 URL 파라미터 방식에 대응)
+// 실시간 읽음 처리 (추가됨) 🌟
+const markAsRead = async (req, res) => {
+    try {
+        const myId = req.userId;
+        const opponentId = req.params.userId;
+
+        await prisma.message.updateMany({
+            where: {
+                senderId: opponentId,
+                receiverId: myId,
+                isRead: false
+            },
+            data: { isRead: true }
+        });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ message: "읽음 처리 실패" });
+    }
+};
+
+// 메시지 전송
 const sendMessage = async (req, res) => {
     try {
         const senderId = req.userId;
-        const receiverId = req.params.userId; // URL에서 ID 추출 (d92d760e...)
+        const receiverId = req.params.userId;
         const { content } = req.body;
 
         if (!content) return res.status(400).json({ message: "내용이 없습니다." });
 
         const [sender, receiver] = await Promise.all([
-            prisma.user.findUnique({ where: { id: senderId }, select: { id: true, birthDate: true } }),
-            prisma.user.findUnique({ where: { id: receiverId }, select: { id: true, birthDate: true } })
+            prisma.user.findUnique({ where: { id: senderId } }),
+            prisma.user.findUnique({ where: { id: receiverId } })
         ]);
 
         if (!sender || !receiver) return res.status(404).json({ message: "사용자 없음" });
 
-        // 성인-미성년자 맞팔로우 필수 조건 검증
         if (checkIsAdult(sender.birthDate) !== checkIsAdult(receiver.birthDate)) {
             const [f1, f2] = await Promise.all([
                 prisma.follow.findUnique({ where: { followerId_followingId: { followerId: senderId, followingId: receiverId } } }),
@@ -134,9 +156,54 @@ const sendMessage = async (req, res) => {
 
         res.status(201).json(newMessage);
     } catch (err) {
-        console.error("전송 에러:", err);
         res.status(500).json({ message: '전송 실패' });
     }
 };
 
-module.exports = { searchUsers, getChatList, getMessagesWithUser, sendMessage };
+// 메시지 수정
+const updateMessage = async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const { content } = req.body;
+        const myId = req.userId;
+
+        const message = await prisma.message.findUnique({ where: { id: messageId } });
+        if (!message) return res.status(404).json({ message: "메시지 없음" });
+        if (message.senderId !== myId) return res.status(403).json({ message: "권한 없음" });
+
+        const updated = await prisma.message.update({
+            where: { id: messageId },
+            data: { content }
+        });
+        res.json(updated);
+    } catch (err) {
+        res.status(500).json({ message: "수정 실패" });
+    }
+};
+
+// 메시지 삭제
+const deleteMessage = async (req, res) => {
+    try {
+        const { messageId } = req.params;
+        const myId = req.userId;
+
+        const message = await prisma.message.findUnique({ where: { id: messageId } });
+        if (!message) return res.status(404).json({ message: "메시지 없음" });
+        if (message.senderId !== myId) return res.status(403).json({ message: "권한 없음" });
+
+        await prisma.message.delete({ where: { id: messageId } });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ message: "삭제 실패" });
+    }
+};
+
+module.exports = {
+    searchUsers,
+    getChatList,
+    getMessagesWithUser,
+    markAsRead,
+    sendMessage,
+    updateMessage,
+    deleteMessage
+};
