@@ -1,0 +1,39 @@
+name: Deploy to AWS EC2
+
+on:
+  push:
+    branches: [ "main", "backend-service" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: SSH Remote Commands
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # 1. 백엔드 브랜치 푸시 시 백엔드만 업데이트
+            if [[ "${{ github.ref }}" == "refs/heads/backend-service" ]]; then
+              echo "Updating Backend..."
+              cd /home/ubuntu/app/backend
+              git pull origin backend-service
+              npm install
+              npx prisma generate
+              pm2 restart noel-backend
+            fi
+
+            # 2. 메인 브랜치 푸시 시 프론트엔드만 업데이트
+            if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+              echo "Updating Frontend..."
+              cd /home/ubuntu/app/frontend-repo/frontend
+              git pull origin main
+              npm install
+              npm run build
+              pm2 restart noel-frontend
+            fi
