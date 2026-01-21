@@ -43,8 +43,8 @@ Zero-Touch 배포: EC2 UserData를 활용한 패키지 설치 및 환경 구성 
 ## 6. CI (Continuous Integration)
 GitHub Actions를 활용하여 코드의 무결성을 자동으로 검증합니다.
 Workflow: .github/workflows/main.yml
-| 단계 | 작업 | 내용 |
-| :--- | :--- | :--- |
+| 단계 | 작업 내용 |
+| :--- | :--- |
 |**Runtime**|Ubuntu 환경 내 Node.js v20 런타임 구성|
 |**Dependency**|npm install을 통한 의존성 설치 무결성 확인|
 |**ORM Check**|Prisma Client Generation을 통한 데이터 모델 검증|
@@ -52,23 +52,25 @@ Workflow: .github/workflows/main.yml
 
 ##7. 트러블슈팅 (RCA)
 개발 및 배포 과정에서 발생한 핵심 기술적 문제를 분석하고 해결한 기록입니다.
-|항목| 상세 내용|
-|문제 상황| Prisma Client 생성 시 파일 시스템 접근 권한 충돌 (EPERM)|
-|발생 증상| Windows 환경에서 npx prisma generate 시 파일 수정 권한 거부 및 빌드 중단|
-|원인 분석| 기존 백엔드 프로세스(Node.js/PM2)가 엔진 파일을 점유 중이거나 실행 권한 미달 확인|
-|해결 방안| 1. PM2 stop 스크립트를 통한 프로세스 점유 해제 자동화|
+| 항목 | 상세 내용|
+| :--- | :--- |
+|**문제 상황**| Prisma Client 생성 시 파일 시스템 접근 권한 충돌 (EPERM)|
+|**발생 증상**| Windows 환경에서 npx prisma generate 시 파일 수정 권한 거부 및 빌드 중단|
+|**원인 분석**| 기존 백엔드 프로세스(Node.js/PM2)가 엔진 파일을 점유 중이거나 실행 권한 미달 확인|
+|**해결 방안**| 1. PM2 stop 스크립트를 통한 프로세스 점유 해제 자동화|
           2. 관리자 권한 쉘 기반의 스크립트 실행 환경 구축으로 권한 충돌 원천 차단
-|문제 상황|CI 파이프라인 상의 Prisma 엔진 미인식|
-|원인 분석|깃허브 액션 서버(Ubuntu) 환경 내 환경변수 및 의존성 주입 시점 차이|
-|해결 방안|npm install 직후 prisma generate 단계 강제 추가로 환경 일관성 확보|
+|**문제 상황**|CI 파이프라인 상의 Prisma 엔진 미인식|
+|**원인 분석**|깃허브 액션 서버(Ubuntu) 환경 내 환경변수 및 의존성 주입 시점 차이|
+|**해결 방안**|npm install 직후 prisma generate 단계 강제 추가로 환경 일관성 확보|
 
 ##8. 주요 기능 (Technical Highlights)
-|구분|기술적 성과 (Technical Achievements)
-|보안 (Security)| JWT & Bcrypt 기반 인증: 비밀번호 단방향 해싱 및 Stateless 기반 인증 토큰 처리 설계|
-|데이터 (Data)| Type-safe DB 설계: Prisma ORM을 활용하여 런타임 데이터 에러 방지 및 쿼리 최적화|
-|아키텍처 (Arch)| 관심사 분리(SoC): 백엔드(main)와 프론트엔드(frontend) 브랜치 독립 운영 및 CI 분리 관리|
-|운영 (DevOps)| IaC 인프라 관리: 수동 배포 지양, CloudFormation을 통한 인프라 변경 이력 관리 및 재현성 확보|
-|품질 (Quality)| CI 파이프라인 구축: 상시 배포 가능한 코드 상태 유지를 위한 자동화된 빌드 검증 프로세스|
+|구분|기술적 성과 (Technical Achievements)|
+| :--- | :--- |
+|**보안 (Security)**| JWT & Bcrypt 기반 인증: 비밀번호 단방향 해싱 및 Stateless 기반 인증 토큰 처리 설계|
+|**데이터 (Data)**| Type-safe DB 설계: Prisma ORM을 활용하여 런타임 데이터 에러 방지 및 쿼리 최적화|
+|**아키텍처 (Arch)**| 관심사 분리(SoC): 백엔드(main)와 프론트엔드(frontend) 브랜치 독립 운영 및 CI 분리 관리|
+|**운영 (DevOps)**| IaC 인프라 관리: 수동 배포 지양, CloudFormation을 통한 인프라 변경 이력 관리 및 재현성 확보|
+|**품질 (Quality)**| CI 파이프라인 구축: 상시 배포 가능한 코드 상태 유지를 위한 자동화된 빌드 검증 프로세스|
 
 # 9. 라이센스
 MIT License
