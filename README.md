@@ -43,11 +43,12 @@ Zero-Touch 배포: EC2 UserData를 활용한 패키지 설치 및 환경 구성 
 ## 6. CI (Continuous Integration)
 GitHub Actions를 활용하여 코드의 무결성을 자동으로 검증합니다.
 Workflow: .github/workflows/main.yml
-|단계| 작업 |내용|
-|Runtime|Ubuntu 환경 내 Node.js v20 런타임 구성|
-|Dependency|npm install을 통한 의존성 설치 무결성 확인|
-|ORM Check|Prisma Client Generation을 통한 데이터 모델 검증|
-|Build Check|어플리케이션 빌드 체크(Exit Code 0) 확인|
+| 단계 | 작업 | 내용 |
+| :--- | :--- | :--- |
+|**Runtime**|Ubuntu 환경 내 Node.js v20 런타임 구성|
+|**Dependency**|npm install을 통한 의존성 설치 무결성 확인|
+|**ORM Check**|Prisma Client Generation을 통한 데이터 모델 검증|
+|**Build Check**|어플리케이션 빌드 체크(Exit Code 0) 확인|
 
 ##7. 트러블슈팅 (RCA)
 개발 및 배포 과정에서 발생한 핵심 기술적 문제를 분석하고 해결한 기록입니다.
