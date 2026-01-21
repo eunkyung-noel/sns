@@ -23,7 +23,7 @@
 ## 4. 로컬 개발 환경
 
 ### 빌드 및 실행 (Backend)
-bash
+'''bash
 cd backend
 npm install
 npx prisma generate
