@@ -10,7 +10,10 @@
 * **infra**: AWS CloudFormation을 활용한 인프라 자원 자동화
 
 ## 2. 시연 영상
-[![SNS 프로젝트 시연 영상](https://img.shields.io/badge/Google%20Drive-시연%20영상%20보러가기-yellow?style=for-the-badge&logo=googledrive)](https://drive.google.com/drive/folders/1rPMKTn0dxdS1L1if9kziClV4VWye3U2x?hl=ko)
+
+[![Stateful 서버 대기열 시스템 시연](https://img.youtube.com/vi/o5AMO190iMs/0.jpg)](https://www.youtube.com/watch?v=o5AMO190iMs)
+
+> 🎥 **위 이미지를 클릭하면 유튜브 시연 영상으로 이동합니다.**
 
 ## 3. 서비스 엔드포인트
 | 서비스 | 환경/포트 | 설명 |
