@@ -74,5 +74,3 @@ Workflow: .github/workflows/main.yml
 |**운영 (DevOps)**| IaC 인프라 관리: 수동 배포 지양, CloudFormation을 통한 인프라 변경 이력 관리 및 재현성 확보|
 |**품질 (Quality)**| CI 파이프라인 구축: 상시 배포 가능한 코드 상태 유지를 위한 자동화된 빌드 검증 프로세스|
 
-# 9. 라이센스
-MIT License
