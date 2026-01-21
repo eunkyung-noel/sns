@@ -28,7 +28,7 @@ cd backend
 npm install
 npx prisma generate
 npm start
-# frontend 브랜치에서 실행
+## frontend 브랜치에서 실행
 git checkout frontend
 cd frontend
 npm install
