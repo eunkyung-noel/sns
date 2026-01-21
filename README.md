@@ -23,11 +23,12 @@
 ## 4. 로컬 개발 환경
 
 ### 빌드 및 실행 (Backend)
-```bash
+bash
 cd backend
 npm install
 npx prisma generate
 npm start
+
 ## frontend 브랜치에서 실행
 git checkout frontend
 cd frontend
