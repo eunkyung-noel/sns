@@ -50,7 +50,7 @@ Workflow: .github/workflows/main.yml
 |**ORM Check**|Prisma Client Generation을 통한 데이터 모델 검증|
 |**Build Check**|어플리케이션 빌드 체크(Exit Code 0) 확인|
 
-##7. 트러블슈팅 (RCA)
+## 7. 트러블슈팅 (RCA)
 개발 및 배포 과정에서 발생한 핵심 기술적 문제를 분석하고 해결한 기록입니다.
 | 항목 | 상세 내용|
 | :--- | :--- |
@@ -58,12 +58,12 @@ Workflow: .github/workflows/main.yml
 |**발생 증상**| Windows 환경에서 npx prisma generate 시 파일 수정 권한 거부 및 빌드 중단|
 |**원인 분석**| 기존 백엔드 프로세스(Node.js/PM2)가 엔진 파일을 점유 중이거나 실행 권한 미달 확인|
 |**해결 방안**| 1. PM2 stop 스크립트를 통한 프로세스 점유 해제 자동화|
-          2. 관리자 권한 쉘 기반의 스크립트 실행 환경 구축으로 권한 충돌 원천 차단
+         > ** 2. 관리자 권한 쉘 기반의 스크립트 실행 환경 구축으로 권한 충돌 원천 차단**
 |**문제 상황**|CI 파이프라인 상의 Prisma 엔진 미인식|
 |**원인 분석**|깃허브 액션 서버(Ubuntu) 환경 내 환경변수 및 의존성 주입 시점 차이|
 |**해결 방안**|npm install 직후 prisma generate 단계 강제 추가로 환경 일관성 확보|
 
-##8. 주요 기능 (Technical Highlights)
+## 8. 주요 기능 (Technical Highlights)
 |구분|기술적 성과 (Technical Achievements)|
 | :--- | :--- |
 |**보안 (Security)**| JWT & Bcrypt 기반 인증: 비밀번호 단방향 해싱 및 Stateless 기반 인증 토큰 처리 설계|
